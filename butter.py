@@ -12,10 +12,10 @@ class Butter:
 		self.mount = subprocess.check_output(["df", path]).decode("utf-8").rsplit(None, 1)[1]
 		self.relPath = os.path.relpath(path, self.mount)
 		self.id = int(subprocess.check_output(["btrfs", "inspect", "rootid", self.mount]).decode("utf-8"))
-		self.vols = self._getVols()
+		self.vols = self._getVols(True)
 
-	def listVolumes(self, readOnly=True):
-		return self.vols.values(readOnly)
+	def listVolumes(self):
+		return self.vols.values()
 
 	def _getVols(self, readOnly=True):
 		vols = {}
@@ -47,7 +47,7 @@ class Butter:
 		try:
 			usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mount])
 		except subprocess.CalledProcessError:
-			logger.info("Rescanning subvolume sizes...")
+			logger.info("Rescanning subvolume sizes (this may take a while)...")
 			subprocess.check_call(["btrfs", "quota", "enable", self.mount])
 			subprocess.check_call(["btrfs", "quota", "rescan", "-w", self.mount])
 			usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mount])
@@ -62,15 +62,3 @@ class Butter:
 
 		return vols
 
-		# SNAPS=$( | grep -o "$DIR/snaps/.*$")
-		# SNAPS=$(echo $SNAPS $RSNAPS | tr ' ' '\n' | sort | uniq -u) || true
-
-	 #    proc = subprocess.Popen(
-	 #        'ls -lh *.txt', shell=True,
-	 #        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-	 #        )
-	    
-	 #    (output, error) = proc.communicate('')
-	 #    print output
-	    
-	 #    return proc.returncode
