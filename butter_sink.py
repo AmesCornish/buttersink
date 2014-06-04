@@ -1,26 +1,31 @@
 #! /usr/bin/python
 
-import sys, os, os.path, subprocess, getopt
+""" Main program to synchronize btrfs snapshots.  See ReadMe.md. """
 
-import file_sink
-import s3_sink
-import ssh_sink
-import best_diffs
-
-import re
+import getopt
 import logging
 import pprint
+import re
+import sys
+
+# import ssh_sink
+import best_diffs
+import file_sink
+import s3_sink
 
 FORMAT = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 options = [
-    { 'short': "h", 'long': "help",         'default': False, 'description': "Display this help" },
-    { 'short': "n", 'long': "dry-run",      'default': False, 'description': "Just print what it would do" },
-    { 'short': "d", 'long': "delete",       'default': False, 'description': "Delete any snapshots in <dest> that are not in <src>" },
-    { 'short': "r", 'long': "receive",      'default': False, 'description': "Internal command to intelligently receive diffs" },
-    { 'short': "b", 'long': "batch",        'default': False, 'description': "Non-interactive" },
-    { 'short': "q", 'long': "quiet",        'default': False, 'description': "Only error messages" },
+    {'short': "h", 'long': "help",         'default': False, 'description': "Display this help"},
+    {'short': "n", 'long': "dry-run",      'default': False,
+        'description': "Just print what it would do"},
+    {'short': "d", 'long': "delete",       'default': False,
+        'description': "Delete any snapshots in <dest> that are not in <src>"},
+    {'short': "r", 'long': "receive",      'default': False,
+        'description': "Internal command to intelligently receive diffs"},
+    {'short': "b", 'long': "batch",        'default': False, 'description': "Non-interactive"},
+    {'short': "q", 'long': "quiet",        'default': False, 'description': "Only error messages"},
 ]
 
 usage = """
@@ -33,9 +38,11 @@ usage = """
 
 optionFile = "~/butter_sync.conf"
 
+
 def parseOptions(optionSpecs, args):
-    longs = [ opt['long'] for opt in optionSpecs ]
-    shorts = ''.join([ opt['short'] for opt in optionSpecs ])
+    """ Parse command-line options. """
+    longs = [opt['long'] for opt in optionSpecs]
+    shorts = ''.join([opt['short'] for opt in optionSpecs])
     (userOptions, args) = getopt.getopt(args, shorts, longs)
     userOptions = dict(userOptions)
 
@@ -52,7 +59,9 @@ def parseOptions(optionSpecs, args):
     logging.debug(args)
     return (userOptions, args)
 
+
 def parseSink(uri):
+    """ Parse command-line description of sink into a sink object. """
     # logging.debug(uri)
     pattern = re.compile('^(?P<method>[^:/]*)://(?P<host>[^/]*)(/(?P<path>.*))?$')
     match = pattern.match(uri)
@@ -72,14 +81,16 @@ def parseSink(uri):
 
     return Sinks[parts['method']](parts['host'], parts['path'])
 
+
 def main(argv=sys.argv):
+    """ Main program. """
     (opts, args) = parseOptions(options, argv[1:])
 
     if opts['help'] or len(args) < 1:
         print(usage)
         print(options)
         return 0
-    
+
     source = parseSink(args[0])
 
     vols = source.listVolumes()
@@ -93,7 +104,8 @@ def main(argv=sys.argv):
     best = best_diffs.BestDiffs([vol['uuid'] for vol in vols])
     best.analyze(source, dest)
 
-    pprint.pprint([ d for d in best.listDiffs() ])
+    for d in best.iterDiffs():
+        print(d)
 
     return 0
 
