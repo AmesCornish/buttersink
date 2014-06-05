@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Node:
+
     def __init__(self, uuid, intermediate=False):
         self.uuid = uuid
         self.intermediate = intermediate
@@ -38,21 +39,22 @@ class BestDiffs:
     """
 
     def __init__(self, volumes):
-        self.nodes = { volume : _Node(volume, False) for volume in volumes }
+        """ Initialize.
+
+        volumes are the required snapshots.
+        """
+        self.nodes = {volume: _Node(volume, False) for volume in volumes}
         self.dest = None
 
     def analyze(self, *sinks):
-        '''
-        Figure out the best diffs to use to reach all our volumes.
-        '''
-
+        """  Figure out the best diffs to use to reach all our required volumes. """
         self.dest = sinks[-1]
 
-        nodes = [ None ]
+        nodes = [None]
         height = 0
 
         while len(nodes) > 0:
-            logger.info("Analyzing %d nodes at height %d", len(nodes), height)
+            logger.info("Analyzing %d nodes at height %d...", len(nodes), height)
             for fromNode in nodes:
                 fromCost = fromNode.totalCost if fromNode else 0
                 fromUUID = fromNode.uuid if fromNode else None
@@ -90,7 +92,7 @@ class BestDiffs:
 
                         logger.debug("Found useful edge %s", toNode)
 
-            nodes = [ node for node in self.nodes.values() if node.height == height ]
+            nodes = [node for node in self.nodes.values() if node.height == height]
             height += 1
 
         self._prune()
@@ -103,25 +105,21 @@ class BestDiffs:
             if fromNode == toNode:
                 return True
 
-            fromNode = self.nodes[fromNode].previous 
+            fromNode = self.nodes[fromNode].previous
 
         return False
 
     def iterDiffs(self):
-        '''
-        Return all diffs used in optimal network.
-        '''
+        """ Return all diffs used in optimal network. """
         for node in self.nodes.values():
             yield node
-            # yield { 'from': node.previous, 'to': node.uuid, 'sink': node.diffSink, 'cost': node.diffCost }
+            # yield { 'from': node.previous, 'to': node.uuid, 'sink': node.diffSink,
+            # 'cost': node.diffCost }
 
     def _prune(self):
-        '''
-        Get rid of all intermediate nodes that aren't needed.
-        '''
-
+        """ Get rid of all intermediate nodes that aren't needed. """
         for node in [node for node in self.nodes.values() if node.intermediate]:
-            if not [ dep for dep in self.nodes if dep.previous == node ]:
+            if not [dep for dep in self.nodes if dep.previous == node]:
                 self.nodes.remove(node)
 
     def _cost(self, sink, size, height):
@@ -135,6 +133,6 @@ class BestDiffs:
         cost += size if delete or sink != self.dest else 0
 
         # Corruption risk
-        cost *= 2**height
+        cost *= 2 ** height
 
         return cost

@@ -2,7 +2,7 @@
 
 """ Main program to synchronize btrfs snapshots.  See ReadMe.md. """
 
-import getopt
+import argparse
 import logging
 import pprint
 import re
@@ -13,56 +13,49 @@ import best_diffs
 import file_sink
 import s3_sink
 
-FORMAT = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
-logging.basicConfig(level=logging.INFO, format=FORMAT)
+theLogFormat = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+logging.basicConfig(level='INFO', format=theLogFormat)
+logger = logging.getLogger(__name__)
+logger.setLevel('DEBUG')
 
-options = [
-    {'short': "h", 'long': "help",         'default': False, 'description': "Display this help"},
-    {'short': "n", 'long': "dry-run",      'default': False,
-        'description': "Just print what it would do"},
-    {'short': "d", 'long': "delete",       'default': False,
-        'description': "Delete any snapshots in <dest> that are not in <src>"},
-    {'short': "r", 'long': "receive",      'default': False,
-        'description': "Internal command to intelligently receive diffs"},
-    {'short': "b", 'long': "batch",        'default': False, 'description': "Non-interactive"},
-    {'short': "q", 'long': "quiet",        'default': False, 'description': "Only error messages"},
-]
+command = argparse.ArgumentParser(
+    description="Synchronize two sets of btrfs snapshots.",
+    epilog="""
+<src>, <dst>:   file://path/to/directory
+                ssh://[user@]host/path/to/directory
+                s3://bucket/prefix
 
-usage = """
-    butter_sync.py [options...] <src> <dest>
+If only <dst> is supplied, just list available snapshots.
+    """,
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+)
+command.add_argument('source', metavar='<src>', nargs='?',  # nargs='+',
+                     help='a source of btrfs snapshots')
+command.add_argument('dest', metavar='<dst>',
+                     help='the btrfs snapshots to be updated')
 
-    <src>, <dest>:  file://path/to/directory
-                    ssh://[user@]host/path/to/directory
-                    s3://bucket/prefix
-"""
+command.add_argument('-n', '--dry-run', action="store_true",
+                     help="display what would be transferred, but don't do it",
+                     )
+command.add_argument('-d', '--delete', action="store_true",
+                     help='delete any snapshots in <dst> that are not in <src>',
+                     )
+command.add_argument('-r', '--receive', action="store_true",
+                     help='internal command to intelligently receive diffs',
+                     )
+command.add_argument('-b', '--batch', action="store_true",
+                     help='non-interactive',
+                     )
+command.add_argument('-q', '--quiet', action="store_true",
+                     help='only display error messages',
+                     )
 
 optionFile = "~/butter_sync.conf"
 
 
-def parseOptions(optionSpecs, args):
-    """ Parse command-line options. """
-    longs = [opt['long'] for opt in optionSpecs]
-    shorts = ''.join([opt['short'] for opt in optionSpecs])
-    (userOptions, args) = getopt.getopt(args, shorts, longs)
-    userOptions = dict(userOptions)
-
-    for opt in options:
-        if opt['long'] in userOptions:
-            continue
-        if opt['short'] in userOptions:
-            userOptions[opt['long']] = userOptions[opt['short']]
-            del userOptions[opt['short']]
-        else:
-            userOptions[opt['long']] = opt['default']
-
-    logging.debug(userOptions)
-    logging.debug(args)
-    return (userOptions, args)
-
-
 def parseSink(uri):
     """ Parse command-line description of sink into a sink object. """
-    # logging.debug(uri)
+    # logger.debug(uri)
     pattern = re.compile('^(?P<method>[^:/]*)://(?P<host>[^/]*)(/(?P<path>.*))?$')
     match = pattern.match(uri)
     if match is None:
@@ -71,7 +64,7 @@ def parseSink(uri):
 
     if parts['method'] == 'file':
         parts['path'] = parts['host'] + '/' + parts['path']
-    logging.debug(parts)
+    logger.debug(parts)
 
     Sinks = {
         'file': file_sink.FileSink,
@@ -84,28 +77,26 @@ def parseSink(uri):
 
 def main(argv=sys.argv):
     """ Main program. """
-    (opts, args) = parseOptions(options, argv[1:])
+    args = command.parse_args()
+    logger.debug("Arguments: %s", vars(args))
 
-    if opts['help'] or len(args) < 1:
-        print(usage)
-        print(options)
-        return 0
-
-    source = parseSink(args[0])
+    source = parseSink(args.source)
 
     vols = source.listVolumes()
 
-    if len(args) < 2:
+    dest = parseSink(args.dest)
+
+    if dest is None:
         pprint.pprint(vols)
         return 0
-
-    dest = parseSink(args[1])
 
     best = best_diffs.BestDiffs([vol['uuid'] for vol in vols])
     best.analyze(source, dest)
 
-    for d in best.iterDiffs():
-        print(d)
+    for diff in best.iterDiffs():
+        logger.info("%s", diff)
+        if not args.dry_run:
+            dest.receive(diff)
 
     return 0
 

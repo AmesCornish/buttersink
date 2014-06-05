@@ -9,6 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
+theMinimumChangeRate = .0001
+
 
 class FileSink:
 
@@ -90,4 +92,12 @@ class FileSink:
             logger.info("Using zero change rate.")
             rate = 0
 
-        return max(rate, .0001)
+        return max(rate, theMinimumChangeRate)
+
+    def send(self, node):
+        """ Use btrfs send to send a diff.
+
+        Returns a stream object.
+        """
+
+        self.butter.send(node.uuid, node.previous)
