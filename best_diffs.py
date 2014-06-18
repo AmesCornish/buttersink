@@ -22,12 +22,29 @@ class _Node:
         self.previous = None
         self.diffSink = None
         self.diffCost = None
+        self.diffSize = None
 
     def __unicode__(self):
-        return u"%s from %s (%f MB)" % (self.uuid, self.previous, self.diffCost)
+        vol = self.diffSink.getVolume(self.uuid)
+        previous = self.diffSink.getVolume(self.previous) if self.previous else None
+
+        return u"%s from %s (%f MB, %d ancestors)" % (
+            vol['path'], previous['path'] if previous else None, self.diffSize, self.height
+            )
 
     def __str__(self):
         return unicode(self).encode('utf-8')
+
+    @staticmethod
+    def summary(nodes):
+        count = 0
+        cost = 0
+        size = 0
+        for n in nodes:
+            count += 1
+            cost += n.diffCost
+            size += n.diffSize
+        return {"count": count, "cost": cost, "size": size}
 
 
 class BestDiffs:
@@ -56,6 +73,9 @@ class BestDiffs:
         while len(nodes) > 0:
             logger.info("Analyzing %d nodes at height %d...", len(nodes), height)
             for fromNode in nodes:
+                if fromNode is not None and fromNode.height >= height:
+                    continue
+
                 fromCost = fromNode.totalCost if fromNode else 0
                 fromUUID = fromNode.uuid if fromNode else None
                 for sink in sinks:
@@ -89,6 +109,7 @@ class BestDiffs:
                         toNode.previous = fromUUID
                         toNode.diffSink = sink
                         toNode.diffCost = cost
+                        toNode.diffSize = edge['size']
 
                         logger.debug("Found useful edge %s", toNode)
 
@@ -116,6 +137,10 @@ class BestDiffs:
             # yield { 'from': node.previous, 'to': node.uuid, 'sink': node.diffSink,
             # 'cost': node.diffCost }
 
+    def summary(self):
+        """ Return summary count and cost and size in a dictionary. """
+        return _Node.summary(self.nodes.values())
+
     def _prune(self):
         """ Get rid of all intermediate nodes that aren't needed. """
         for node in [node for node in self.nodes.values() if node.intermediate]:
@@ -133,6 +158,6 @@ class BestDiffs:
         cost += size if delete or sink != self.dest else 0
 
         # Corruption risk
-        cost *= 2 ** height
+        cost *= 2 ** (height/4.0)
 
         return cost

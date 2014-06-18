@@ -93,6 +93,9 @@ def main(argv=sys.argv):
     best = best_diffs.BestDiffs([vol['uuid'] for vol in vols])
     best.analyze(source, dest)
 
+    summary =  best.summary()
+    logger.info("%d diffs, %f MB", summary["count"], summary["size"])
+
     for diff in best.iterDiffs():
         logger.info("%s", diff)
         if not args.dry_run:

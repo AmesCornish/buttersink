@@ -38,6 +38,10 @@ class FileSink:
         """ Return list of volumes that are available. """
         return self.volumes.values()
 
+    def getVolume(self, uuid):
+        """ Return dict of info for a specific volume. """
+        return self.volumes[uuid]
+
     def iterEdges(self, fromVol):
         """ Return the edges available from fromVol.
 
@@ -99,5 +103,4 @@ class FileSink:
 
         Returns a stream object.
         """
-
         self.butter.send(node.uuid, node.previous)

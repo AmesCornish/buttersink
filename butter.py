@@ -77,7 +77,6 @@ class Butter:
             volID = int(qgroup.split("/")[-1])
 
             if volID in volsByID:
-                # import pudb; pu.db
                 volsByID[volID]['totalSize'] = float(totalSize) / 2 ** 20
                 volsByID[volID]['exclusiveSize'] = float(exclusiveSize) / 2 ** 20
 
