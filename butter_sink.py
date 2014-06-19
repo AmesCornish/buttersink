@@ -16,7 +16,7 @@ import s3_sink
 theLogFormat = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
 logging.basicConfig(level='INFO', format=theLogFormat)
 logger = logging.getLogger(__name__)
-logger.setLevel('DEBUG')
+# logger.setLevel('DEBUG')
 
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
@@ -90,11 +90,13 @@ def main(argv=sys.argv):
         pprint.pprint(vols)
         return 0
 
-    best = best_diffs.BestDiffs([vol['uuid'] for vol in vols])
+    best = best_diffs.BestDiffs([vol['uuid'] for vol in vols], args.delete)
     best.analyze(source, dest)
 
-    summary =  best.summary()
-    logger.info("%d diffs, %f MB", summary["count"], summary["size"])
+    summary = best.summary()
+    logger.info("Optimal synchronization: %d diffs, %f MB total", summary["count"], summary["size"])
+    for sink, size in summary["sinks"].items():
+        logger.info("%f MB from %s", size, sink)
 
     for diff in best.iterDiffs():
         logger.info("%s", diff)

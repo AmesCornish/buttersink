@@ -25,11 +25,14 @@ class _Node:
         self.diffSize = None
 
     def __unicode__(self):
-        vol = self.diffSink.getVolume(self.uuid)
-        previous = self.diffSink.getVolume(self.previous) if self.previous else None
+        if self.diffSink is None:
+            return u"<None>"
+
+        volPath = self.diffSink.getVolume(self.uuid)['path']
+        prevPath = self.diffSink.getVolume(self.previous)['path'] if self.previous else None
 
         return u"%s from %s (%f MB, %d ancestors)" % (
-            vol['path'], previous['path'] if previous else None, self.diffSize, self.height
+            volPath, prevPath, self.diffSize, self.height
             )
 
     def __str__(self):
@@ -40,11 +43,17 @@ class _Node:
         count = 0
         cost = 0
         size = 0
+        sinks = {}
         for n in nodes:
             count += 1
             cost += n.diffCost
             size += n.diffSize
-        return {"count": count, "cost": cost, "size": size}
+            if n.diffSink in sinks:
+                sinks[n.diffSink] += n.diffSize
+            else:
+                sinks[n.diffSink] = n.diffSize
+
+        return {"count": count, "cost": cost, "size": size, "sinks": sinks}
 
 
 class BestDiffs:
@@ -55,32 +64,44 @@ class BestDiffs:
     The directed edges are diffs from an available sink.
     """
 
-    def __init__(self, volumes):
+    def __init__(self, volumes, delete=False):
         """ Initialize.
 
         volumes are the required snapshots.
         """
         self.nodes = {volume: _Node(volume, False) for volume in volumes}
         self.dest = None
+        self.delete = delete
 
     def analyze(self, *sinks):
         """  Figure out the best diffs to use to reach all our required volumes. """
-        self.dest = sinks[-1]
+        # Use destination (already uploaded) edges first
+        sinks = list(sinks)
+        sinks.reverse()
+        self.dest = sinks[0]
 
         nodes = [None]
         height = 0
 
         while len(nodes) > 0:
-            logger.info("Analyzing %d nodes at height %d...", len(nodes), height)
+            logger.debug("Analyzing %d nodes at height %d...", len(nodes), height)
             for fromNode in nodes:
                 if fromNode is not None and fromNode.height >= height:
                     continue
 
                 fromCost = fromNode.totalCost if fromNode else 0
                 fromUUID = fromNode.uuid if fromNode else None
+                logger.debug("Examining edges from %s", fromUUID)
+
                 for sink in sinks:
                     for edge in sink.iterEdges(fromUUID):
                         toUUID = edge['to']
+
+                        # Skip any edges already in the destination
+                        if sink != self.dest and self.dest.hasEdge(toUUID, fromUUID):
+                            continue
+
+                        # Get or create edge for this node
                         if toUUID in self.nodes:
                             toNode = self.nodes[toUUID]
                         else:
@@ -89,20 +110,16 @@ class BestDiffs:
 
                         cost = self._cost(sink, edge['size'], height)
 
-                        # Don't replace an identical diff already uploaded to destination
-                        if toNode.previous == fromUUID and toNode.diffSink == self.dest:
-                            continue
-
                         # Don't use a more-expensive path
                         if toNode.diffCost is not None and toNode.diffCost <= cost:
-                            # Unless it's an identical diff already uploaded
-                            if toNode.previous != fromUUID or sink != self.dest:
-                                continue
+                            continue
 
                         # Don't create circular paths
                         if self._wouldLoop(fromUUID, toUUID):
                             logger.debug("Ignoring looping edge: %s", edge)
                             continue
+
+                        logger.debug("Replacing edge %s...", toNode)
 
                         toNode.height = height
                         toNode.totalCost = fromCost + cost
@@ -111,7 +128,7 @@ class BestDiffs:
                         toNode.diffCost = cost
                         toNode.diffSize = edge['size']
 
-                        logger.debug("Found useful edge %s", toNode)
+                        logger.debug("...with better edge %s", toNode)
 
             nodes = [node for node in self.nodes.values() if node.height == height]
             height += 1
@@ -149,13 +166,12 @@ class BestDiffs:
 
     def _cost(self, sink, size, height):
         cost = 0
-        delete = True
 
         # Transfer
         cost += size if sink != self.dest else 0
 
         # Storage
-        cost += size if delete or sink != self.dest else 0
+        cost += size if self.delete or sink != self.dest else 0
 
         # Corruption risk
         cost *= 2 ** (height/4.0)

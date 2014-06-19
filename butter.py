@@ -2,11 +2,13 @@
 
 import subprocess
 import os.path
+import os
 
 import logging
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
+DEVNULL = open(os.devnull, 'wb')
 
 class Butter:
 
@@ -38,6 +40,10 @@ class Butter:
     def _getVolumes(self, readOnly=True):
         vols = {}
         volsByID = {}
+
+        logger.info('Listing "%s" snapshots...', self.relPath)
+
+        subprocess.check_call(["btrfs", "fi", "sync", self.mount], stdout=DEVNULL)
 
         result = subprocess.check_output(
             ["btrfs", "sub", "list", "-put", "-r" if readOnly else "", self.mount]
@@ -77,6 +83,7 @@ class Butter:
             volID = int(qgroup.split("/")[-1])
 
             if volID in volsByID:
+                logger.debug("Snap info: %s", line)
                 volsByID[volID]['totalSize'] = float(totalSize) / 2 ** 20
                 volsByID[volID]['exclusiveSize'] = float(exclusiveSize) / 2 ** 20
 

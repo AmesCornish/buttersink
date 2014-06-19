@@ -35,7 +35,7 @@ To use the ssh back-end, butter_sink must be installed on the remote system.
 
 butter_sink *only* handles read-only subvolumes.  It ignores read-write subvolumes and any files not in a subvolume.
 
-<del>All options can be stored in a conf file, $HOME/butter_sink.conf by default.</del>
+<del>All options can be stored in a configuration file, $HOME/butter_sink.conf by default.</del>
 
 # Authentication
 

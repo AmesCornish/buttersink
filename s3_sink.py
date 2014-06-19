@@ -2,6 +2,8 @@
 
 # Docs: http://boto.readthedocs.org/en/latest/
 
+from __future__ import division
+
 import boto
 
 import re
@@ -34,24 +36,37 @@ class S3Sink:
         self.vols = None
         self._listBucket()
 
-    def _listBucket(self):
-        pattern = re.compile("^(?P<to>[^/]*)/(?P<from>.*)$")
+    def __unicode__(self):
+        return u'S3 Bucket "%s"' % (self.bucketName)
 
-        logger.info("Listing bucket '%s' contents...", self.bucketName)
+    def __str__(self):
+        return unicode(self).encode('utf-8')
+
+    def _listBucket(self):
+        pattern = re.compile("^%s(?P<to>[^/]*)/(?P<from>.*)$" % (self.prefix))
+
+        logger.info("Listing %s contents...", self)
         self.diffs = []
         for key in self.bucket.list(prefix=self.prefix):
             diff = pattern.match(key.name).groupdict()
 
+            if diff['from'] == 'None':
+                diff['from'] = None
+
             self.diffs.append(
-                {'from': diff['from'], 'to': diff['to'], 'size': key.size})
+                {'from': diff['from'], 'to': diff['to'], 'size': key.size / (2**20), 'path': diff['to']})
 
         logger.debug(self.diffs)
 
-        self.vols = {diff['to'] for diff in self.diffs}
+        self.vols = {diff['to']:diff for diff in self.diffs}
 
     def listVolumes(self):
         """ Return list of volumes that are available. """
-        return self.vols
+        return self.vols.values
+
+    def getVolume(self, uuid):
+        """ Return info about volume. """
+        return self.vols[uuid]
 
     def iterEdges(self, fromVol):
         """ Return the edges available from fromVol.
@@ -62,8 +77,18 @@ class S3Sink:
             if diff['from'] == fromVol:
                 yield {'to': diff['to'], 'size': diff['size']}
 
+    def hasEdge(self, toUUID, fromUUID):
+        """ Test whether edge is in this sink. """
+        for diff in self.diffs:
+            if diff['from'] == fromUUID and diff['to'] == toUUID:
+                return True
+        return False
+
     def receive(self, diff):
         """ Send diff to S3. """
+        if diff.diffSink == self:
+            return
+
         stream = diff.diffSink.send(diff)
 
         name = "%s%s/%s" % (self.prefix, diff.uuid, diff.previous)
@@ -96,19 +121,19 @@ theBtrfsVersion = '0.0'
 
 
 def _displayProgress(sent, total):
-    logger.info("Sent %d bytes of %d", sent, total)
+    logger.info("Sent %f of %f MB (%f%%)", sent / (2**20), total / (2**20), 100*sent/total)
 
 
 class _Uploader:
     def __init__(self, bucket, keyName):
         self.bucket = bucket
         self.keyName = keyName
-        self.upload = None
+        self.uploader = None
         self.chunkCount = None
 
     def __enter__(self):
         logger.info("Beginning upload to %s", self.keyName)
-        self.upload = self.bucket.initiate_multipart_upload(
+        self.uploader = self.bucket.initiate_multipart_upload(
             self.keyName,
             encrypt_key=isEncrypted,
             metadata={'btrfsVersion': theBtrfsVersion},
@@ -118,15 +143,15 @@ class _Uploader:
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
         if exceptionType is None:
-            self.upload.complete_upload()
+            self.uploader.complete_upload()
         else:
             # TODO: this doesn't free storage used by part uploads currently in progress
-            self.upload.cancel_upload()
-        self.upload = None
+            self.uploader.cancel_upload()
+        self.uploader = None
         return False  # Don't supress exception
 
     def upload(self, bytes):
         self.chunkCount += 1
         logger.info("Uploading chunk #%d for %s", self.chunkCount, self.keyName)
         fileObject = io.BytesIO(bytes)
-        self.upload.upload_part_from_file(fileObject, self.chunkCount)
+        self.uploader.upload_part_from_file(fileObject, self.chunkCount, cb=_displayProgress, num_cb=20)

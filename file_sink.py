@@ -54,17 +54,12 @@ class FileSink:
 
         fromVol = self.volumes[fromVol]
         fromParent = fromVol['parent']
-        fromGen = fromVol['gen']
 
         vols = [toVol for toVol in self.volumes.values()
                 if toVol['parent'] == fromParent
                 ]
 
-        # import pudb; pu.db
-
-        rate = self._calcChangeRate(vols)
-
-        logger.debug("Change rate: %f", rate)
+        changeRate = self._calcChangeRate(vols)
 
         for toVol in vols:
             if toVol == fromVol:
@@ -72,35 +67,53 @@ class FileSink:
 
             # This gives a conservative estimate of the size of the diff
 
-            genDiff = abs(toVol['gen'] - fromGen)
-            estimatedSize = toVol['exclusiveSize'] + \
-                toVol['totalSize'] * (1 - math.exp(-rate * genDiff))
+            estimatedSize = self._estimateSize(toVol, fromVol, changeRate)
 
             yield {'to': toVol['uuid'], 'size': estimatedSize}
+
+    def _estimateSize(self, toVol, fromVol, changeRate):
+        fromGen = fromVol['gen']
+        genDiff = abs(toVol['gen'] - fromGen)
+
+        estimatedSize = max(toVol['exclusiveSize'], toVol['totalSize'] - fromVol['totalSize'])
+        estimatedSize += toVol['totalSize'] * (1 - math.exp(-changeRate * genDiff))
+
+        return estimatedSize
 
     def _calcChangeRate(self, vols):
         total = 0
         diffs = 0
         minGen = vols[0]['gen']
         maxGen = minGen
+        minSize = vols[0]['totalSize']
+        maxSize = minSize
 
         for vol in vols:
             total += vol['totalSize']
             diffs += vol['exclusiveSize']
             minGen = min(minGen, vol['gen'])
             maxGen = max(maxGen, vol['gen'])
+            minSize = min(minSize, vol['totalSize'])
+            maxSize = max(maxSize, vol['totalSize'])
 
         try:
+            # exclusiveSize is often useless,
+            # because data may be shared with read-write volumes not usable for send operations
+            diffs = max(diffs, maxSize - minSize)
             rate = - math.log(1 - diffs / total) * (len(vols) - 1) / (maxGen - minGen)
         except ZeroDivisionError:
             logger.info("Using zero change rate.")
             rate = 0
 
-        return max(rate, theMinimumChangeRate)
+        rate = max(rate, theMinimumChangeRate)
+
+        logger.debug("Change rate: %f", rate)
+
+        return rate
 
     def send(self, node):
         """ Use btrfs send to send a diff.
 
         Returns a stream object.
         """
-        self.butter.send(node.uuid, node.previous)
+        return self.butter.send(node.uuid, node.previous)
