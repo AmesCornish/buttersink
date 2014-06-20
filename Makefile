@@ -2,7 +2,7 @@
 .PHONY : all
 all : apt.stamp
 
-OPTS=--dry-run
+# OPTS=--dry-run
 EXEC=sudo ./butter_sink.py ${OPTS}
 TEST_DIR=/mnt/butter/bs-test
 

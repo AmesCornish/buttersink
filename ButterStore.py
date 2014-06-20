@@ -55,7 +55,7 @@ class ButterStore(Store.Store):
 
         if fromVol not in self.volumes:
             return
-        
+
         fromVol = self.volumes[fromVol]
         fromParent = fromVol['parent']
 
@@ -78,6 +78,10 @@ class ButterStore(Store.Store):
     def hasEdge(self, toUUID, fromUUID):
         """ Store already contains this edge. """
         return toUUID in self.volumes and fromUUID in self.volumes
+
+    def receive(self, toUUID, fromUUID, stream):
+        """ Store the diff. """
+        self.butter.receive(stream)
 
     def _estimateSize(self, toVol, fromVol, changeRate):
         fromGen = fromVol['gen']
@@ -125,3 +129,4 @@ class ButterStore(Store.Store):
         Returns a stream object.
         """
         return self.butter.send(node.uuid, node.previous)
+

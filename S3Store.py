@@ -87,16 +87,19 @@ class S3Store(Store.Store):
                 return True
         return False
 
-    def receive(self, diff):
+    def receive(self, toUUID, fromUUID, stream):
         """ Send diff to S3. """
-        if diff.diffSink == self:
-            return
-
-        stream = diff.diffSink.send(diff)
-
-        name = "%s%s/%s" % (self.prefix, diff.uuid, diff.previous)
+        name = "%s%s/%s" % (self.prefix, toUUID, fromUUID)
 
         self._upload(stream, name)
+
+    def send(self, node):
+        """ Return a stream object to get the diff. """
+        raise NotImplementedError
+        # key = xx
+        # stream = xxx
+        # key.get_contents_to_file(stream)
+        # return stream
 
     def _upload(self, stream, keyName):
         # key = self.bucket.get_key(keyName)

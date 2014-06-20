@@ -94,14 +94,20 @@ def main(argv=sys.argv):
     best.analyze(source, dest)
 
     summary = best.summary()
-    logger.info("Optimal synchronization: %d diffs, %f MB total", summary["count"], summary["size"])
+    logger.info("Optimal synchronization: %d diffs, %f MB total",
+                summary["count"], summary["size"])
     for sink, size in summary["sinks"].items():
         logger.info("%f MB from %s", size, sink)
 
     for diff in best.iterDiffs():
         logger.info("%s", diff)
         if not args.dry_run:
-            dest.receive(diff)
+            if diff.diffSink == dest:
+                continue
+
+            stream = diff.diffSink.send(diff)
+
+            dest.receive(diff.uuid, diff.previous, stream)
 
     return 0
 

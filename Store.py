@@ -18,3 +18,11 @@ class Store:
     def hasEdge(self, toUUID, fromUUID):
         """ Store already contains this edge. """
         raise NotImplementedError
+
+    def receive(self, toUUID, fromUUID, stream):
+        """ Store the diff. """
+        raise NotImplementedError
+
+    def send(self, node):
+        """ Return a stream object to get the diff. """
+        raise NotImplementedError

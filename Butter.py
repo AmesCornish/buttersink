@@ -89,6 +89,12 @@ class Butter:
 
         return vols
 
+    def receive(self, toUUID, fromUUID, stream):
+        """ Store the diff. """
+        cmd = ["btrfs", "receive", self.path]
+        logger.info("Receiving %s...", toUUID)
+        subprocess.check_call(cmd, stdin=stream)
+
     def send(self, uuid, parent):
         """ Send a (incremental) snapshot.
 
