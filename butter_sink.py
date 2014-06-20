@@ -8,10 +8,10 @@ import pprint
 import re
 import sys
 
-# import ssh_sink
-import best_diffs
-import file_sink
-import s3_sink
+# import SSHStore
+import BestDiffs
+import ButterStore
+import S3Store
 
 theLogFormat = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
 logging.basicConfig(level='INFO', format=theLogFormat)
@@ -67,9 +67,9 @@ def parseSink(uri):
     logger.debug(parts)
 
     Sinks = {
-        'file': file_sink.FileSink,
-        's3': s3_sink.S3Sink,
-        # 'ssh': ssh_sink.ssh_sink,
+        'file': ButterStore.ButterStore,
+        's3': S3Store.S3Store,
+        # 'ssh': SSHStore.SSHStore,
     }
 
     return Sinks[parts['method']](parts['host'], parts['path'])
@@ -90,7 +90,7 @@ def main(argv=sys.argv):
         pprint.pprint(vols)
         return 0
 
-    best = best_diffs.BestDiffs([vol['uuid'] for vol in vols], args.delete)
+    best = BestDiffs.BestDiffs([vol['uuid'] for vol in vols], args.delete)
     best.analyze(source, dest)
 
     summary = best.summary()

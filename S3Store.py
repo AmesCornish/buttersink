@@ -5,18 +5,15 @@
 from __future__ import division
 
 import boto
-
-import re
-
+import io
 import logging
+import re
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
 
-import io
 
-
-class S3Sink:
+class S3Store:
 
     """ An S3 bucket synchronization source or sink. """
 
@@ -32,8 +29,13 @@ class S3Sink:
         self.bucket = s3.get_bucket(self.bucketName)
 
         self.prefix = path
+
+        # List of dict with from, to, size, path
         self.diffs = None
+
+        # { uuid: { path, uuid, } }
         self.vols = None
+
         self._listBucket()
 
     def __unicode__(self):

@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-import butter
+import Butter
 
 import math
 import logging
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 theMinimumChangeRate = .0001
 
 
-class FileSink:
+class ButterStore:
 
     """ A local btrfs synchronization source or sink. """
 
@@ -23,7 +23,7 @@ class FileSink:
         path is the file system location of the read-only subvolumes.
         """
         self.path = path
-        self.butter = butter.Butter(path)
+        self.butter = Butter.Butter(path)
         self.volumes = self.butter.listVolumes()
 
     def __unicode__(self):

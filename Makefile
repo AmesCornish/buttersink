@@ -2,7 +2,7 @@
 .PHONY : all
 all : apt.stamp
 
-# OPTS=--dry-run --delete
+OPTS=--dry-run
 EXEC=sudo ./butter_sink.py ${OPTS}
 TEST_DIR=/mnt/butter/bs-test
 
@@ -22,7 +22,7 @@ ${TEST_DIR} :
 	sudo btrfs sub create $@
 	sudo chown $$USER:$$USER $@
 
-${TEST_DIR}/snaps : | ${TEST_DIR}
+${TEST_DIR}/snaps ${TEST_DIR}/restore : | ${TEST_DIR}
 	mkdir $@
 
 ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
@@ -36,3 +36,8 @@ clean_test :
 	sudo btrfs fi sync ${TEST_DIR}
 	sudo btrfs sub del ${TEST_DIR}/snaps/*
 	sudo btrfs sub del ${TEST_DIR}
+
+.PHONY : test3
+test3 : | ${TEST_DIR}/restore
+	${EXEC} s3://butter-sink/test2/ file://${TEST_DIR}/restore 
+
