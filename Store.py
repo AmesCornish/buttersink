@@ -10,24 +10,11 @@
 # Volume: { uuid, path, size }
 # Diff: { toUUID, fromUUID, size }
 
-class Volume:
-
-    """ Stored snapshot. """
-
-    def __init__(self, uuid, path, size=None):
-        """ Initialize.
-
-        uuid: globally unique id, suitable for indexing
-        path: local relative path, may change
-        size: in MiB, if known
-        """
-        self.uuid = uuid
-        self.uuid = uuid
-        self.uuid = uuid
-
 
 class Store:
 
     """ Abstract class for storage back-end. """
 
-    pass
+    def hasEdge(self, toUUID, fromUUID):
+        """ Store already contains this edge. """
+        raise NotImplementedError

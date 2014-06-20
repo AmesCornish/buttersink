@@ -3,6 +3,7 @@
 from __future__ import division
 
 import Butter
+import Store
 
 import math
 import logging
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 theMinimumChangeRate = .0001
 
 
-class ButterStore:
+class ButterStore(Store.Store):
 
     """ A local btrfs synchronization source or sink. """
 
@@ -52,6 +53,9 @@ class ButterStore:
                 yield {'to': toVol['uuid'], 'size': toVol['totalSize']}
             return
 
+        if fromVol not in self.volumes:
+            return
+        
         fromVol = self.volumes[fromVol]
         fromParent = fromVol['parent']
 
@@ -70,6 +74,10 @@ class ButterStore:
             estimatedSize = self._estimateSize(toVol, fromVol, changeRate)
 
             yield {'to': toVol['uuid'], 'size': estimatedSize}
+
+    def hasEdge(self, toUUID, fromUUID):
+        """ Store already contains this edge. """
+        return toUUID in self.volumes and fromUUID in self.volumes
 
     def _estimateSize(self, toVol, fromVol, changeRate):
         fromGen = fromVol['gen']

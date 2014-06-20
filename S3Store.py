@@ -4,6 +4,8 @@
 
 from __future__ import division
 
+import Store
+
 import boto
 import io
 import logging
@@ -12,8 +14,7 @@ logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
 
-
-class S3Store:
+class S3Store(Store.Store):
 
     """ An S3 bucket synchronization source or sink. """
 
@@ -60,11 +61,11 @@ class S3Store:
 
         logger.debug(self.diffs)
 
-        self.vols = {diff['to']:diff for diff in self.diffs}
+        self.vols = {diff['to']: {'uuid': diff['to'], 'path': diff['to']} for diff in self.diffs}
 
     def listVolumes(self):
         """ Return list of volumes that are available. """
-        return self.vols.values
+        return self.vols.values()
 
     def getVolume(self, uuid):
         """ Return info about volume. """
