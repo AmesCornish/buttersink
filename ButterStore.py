@@ -79,9 +79,9 @@ class ButterStore(Store.Store):
         """ Store already contains this edge. """
         return toUUID in self.volumes and fromUUID in self.volumes
 
-    def receive(self, toUUID, fromUUID, stream):
-        """ Store the diff. """
-        self.butter.receive(stream)
+    def receive(self, toUUID, fromUUID):
+        """ Return a file-like (stream) object to store a diff. """
+        return self.butter.receive(toUUID, fromUUID)
 
     def _estimateSize(self, toVol, fromVol, changeRate):
         fromGen = fromVol['gen']
@@ -123,10 +123,6 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, node):
-        """ Use btrfs send to send a diff.
-
-        Returns a stream object.
-        """
-        return self.butter.send(node.uuid, node.previous)
-
+    def send(self, diff, stream):
+        """ Write the diff to the stream. """
+        self.butter.send(diff.uuid, diff.previous, stream)

@@ -51,3 +51,13 @@ S3 interaction and S3 authentication are handled by boto.  Boto will read S3 cre
 	cd butter_sink
 	make
 
+# Authors
+
+# Contact
+
+# Testing
+
+    make test1
+    make test2
+    make test3
+

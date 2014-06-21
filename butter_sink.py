@@ -105,9 +105,11 @@ def main(argv=sys.argv):
             if diff.diffSink == dest:
                 continue
 
-            stream = diff.diffSink.send(diff)
+            logger.info("Sending...")
 
-            dest.receive(diff.uuid, diff.previous, stream)
+            stream = dest.receive(diff.uuid, diff.previous)
+
+            diff.diffSink.send(diff, stream)
 
     return 0
 

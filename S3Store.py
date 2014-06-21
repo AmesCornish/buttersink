@@ -87,19 +87,17 @@ class S3Store(Store.Store):
                 return True
         return False
 
-    def receive(self, toUUID, fromUUID, stream):
-        """ Send diff to S3. """
-        name = "%s%s/%s" % (self.prefix, toUUID, fromUUID)
+    def receive(self, toUUID, fromUUID):
+        """ Return a file-like (stream) object to store a diff. """
+        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID))
 
-        self._upload(stream, name)
+    def _keyName(self, toUUID, fromUUID):
+        return "%s%s/%s" % (self.prefix, toUUID, fromUUID)
 
-    def send(self, node):
-        """ Return a stream object to get the diff. """
-        raise NotImplementedError
-        # key = xx
-        # stream = xxx
-        # key.get_contents_to_file(stream)
-        # return stream
+    def send(self, diff, stream):
+        """ Write the diff to the stream. """
+        key = self.bucket.get_key(self._keyName(diff.uuid, diff.previous))
+        key.get_contents_to_file(stream, cb=_displayProgress, num_cb=20)
 
     def _upload(self, stream, keyName):
         # key = self.bucket.get_key(keyName)
@@ -136,8 +134,12 @@ class _Uploader:
         self.keyName = keyName
         self.uploader = None
         self.chunkCount = None
+        self.open()
 
     def __enter__(self):
+        return self
+
+    def open(self):
         logger.info("Beginning upload to %s", self.keyName)
         self.uploader = self.bucket.initiate_multipart_upload(
             self.keyName,
@@ -145,19 +147,26 @@ class _Uploader:
             metadata={'btrfsVersion': theBtrfsVersion},
             )
         self.chunkCount = 0
-        return self
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
-        if exceptionType is None:
+        self.close(abort=exceptionType is not None)
+        return False  # Don't supress exception
+
+    def write(self, bytes):
+        self.upload(bytes)
+
+    def close(self, abort=False):
+        if not abort:
             self.uploader.complete_upload()
         else:
             # TODO: this doesn't free storage used by part uploads currently in progress
             self.uploader.cancel_upload()
         self.uploader = None
-        return False  # Don't supress exception
 
     def upload(self, bytes):
         self.chunkCount += 1
         logger.info("Uploading chunk #%d for %s", self.chunkCount, self.keyName)
         fileObject = io.BytesIO(bytes)
-        self.uploader.upload_part_from_file(fileObject, self.chunkCount, cb=_displayProgress, num_cb=20)
+        self.uploader.upload_part_from_file(
+            fileObject, self.chunkCount, cb=_displayProgress, num_cb=20
+            )

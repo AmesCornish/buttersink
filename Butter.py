@@ -89,17 +89,14 @@ class Butter:
 
         return vols
 
-    def receive(self, toUUID, fromUUID, stream):
-        """ Store the diff. """
+    def receive(self, toUUID, fromUUID):
+        """ Return a file-like (stream) object to store a diff. """
         cmd = ["btrfs", "receive", self.path]
-        logger.info("Receiving %s...", toUUID)
-        subprocess.check_call(cmd, stdin=stream)
+        process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        return process.stdin
 
-    def send(self, uuid, parent):
-        """ Send a (incremental) snapshot.
-
-        Return the stream object that will send the data.
-        """
+    def send(self, uuid, parent, stream):
+        """ Write a (incremental) snapshot to the stream. """
         targetPath = os.path.join(self.path, self.volumes[uuid]['path'])
 
         if parent is not None:
@@ -108,5 +105,4 @@ class Butter:
         else:
             cmd = ["btrfs", "send", targetPath]
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=-1)
-        return process.stdout
+        subprocess.check_call(cmd, stdout=stream)
