@@ -8,7 +8,10 @@ import logging
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
+theChunkSize = 10 * (2**20)
+
 DEVNULL = open(os.devnull, 'wb')
+
 
 class Butter:
 
@@ -89,7 +92,7 @@ class Butter:
 
         return vols
 
-    def receive(self, toUUID, fromUUID):
+    def receive(self):
         """ Return a file-like (stream) object to store a diff. """
         cmd = ["btrfs", "receive", self.path]
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -105,4 +108,12 @@ class Butter:
         else:
             cmd = ["btrfs", "send", targetPath]
 
-        subprocess.check_call(cmd, stdout=stream)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+
+        while True:
+            data = process.stdout.read(theChunkSize)
+            if len(data) == 0:
+                break
+            stream.write(data)
+
+        stream.close()

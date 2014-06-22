@@ -19,10 +19,10 @@ class Store:
         """ Store already contains this edge. """
         raise NotImplementedError
 
-    def receive(self, toUUID, fromUUID):
+    def receive(self, toUUID, fromUUID, path):
         """ Return a file-like (stream) object to store a diff. """
         raise NotImplementedError
 
-    def send(self, diff, stream):
-        """ Write the diff to the stream. """
+    def send(self, toUUID, fromUUID, stream):
+        """ Write the diff (toUUID from fromUUID) to the stream. """
         raise NotImplementedError

@@ -4,14 +4,31 @@
 
 from __future__ import division
 
-import Store
+if True:  # Imports and constants
+    if True:  # Imports
+        import Store
 
-import boto
-import io
-import logging
-import re
-logger = logging.getLogger(__name__)
-# logger.setLevel('DEBUG')
+        import boto
+        import io
+        import logging
+        import pprint
+        import re
+        import sys
+    if True:  # Constants
+        # For S3 uploads
+        theChunkSize = 100 * 2**20
+
+        # Maximum xumber of progress reports per chunk
+        theProgressCount = 100
+
+        # This does transparent S3 server-side encryption
+        isEncrypted = True
+
+        # TODO: Get a real version number
+        theBtrfsVersion = '0.0'
+
+        logger = logging.getLogger(__name__)
+        # logger.setLevel('DEBUG')
 
 
 class S3Store(Store.Store):
@@ -26,10 +43,12 @@ class S3Store(Store.Store):
         """
         self.bucketName = host
 
-        s3 = boto.connect_s3()
-        self.bucket = s3.get_bucket(self.bucketName)
-
+        path = path.strip("/")
+        if path:
+            path += "/"
         self.prefix = path
+
+        self.keyPattern = re.compile(S3Store.theKeyPattern % ())
 
         # List of dict with from, to, size, path
         self.diffs = None
@@ -37,35 +56,64 @@ class S3Store(Store.Store):
         # { uuid: { path, uuid, } }
         self.vols = None
 
+        logger.info("Listing %s contents...", self)
+
+        s3 = boto.connect_s3()
+        self.bucket = s3.get_bucket(self.bucketName)
         self._listBucket()
 
     def __unicode__(self):
+        """ Return text description. """
         return u'S3 Bucket "%s"' % (self.bucketName)
 
     def __str__(self):
+        """ Return text description. """
         return unicode(self).encode('utf-8')
 
     def _listBucket(self):
-        pattern = re.compile("^%s(?P<to>[^/]*)/(?P<from>.*)$" % (self.prefix))
-
-        logger.info("Listing %s contents...", self)
+        self.vols = {}
         self.diffs = []
-        for key in self.bucket.list(prefix=self.prefix):
-            diff = pattern.match(key.name).groupdict()
+
+        for key in self.bucket.list():
+            diff = self._parseKeyName(key.name)
+
+            if diff is None:
+                logger.warn("Can't parse '%s' in S3", key.name)
+                continue
 
             if diff['from'] == 'None':
                 diff['from'] = None
 
-            self.diffs.append(
-                {'from': diff['from'], 'to': diff['to'], 'size': key.size / (2**20), 'path': diff['to']})
+            extra = not diff['fullpath'].startswith(self.prefix.rstrip("/"))
 
-        logger.debug(self.diffs)
+            if not extra:
+                diff['path'] = diff['fullpath'][len(self.prefix):]
+            else:
+                diff['path'] = diff['fullpath']
 
-        self.vols = {diff['to']: {'uuid': diff['to'], 'path': diff['to']} for diff in self.diffs}
+            if not diff['path']:
+                diff['path'] = "."
+
+            self.vols[diff['to']] = {
+                'uuid': diff['to'],
+                'path': diff['path'],
+                'fullpath': diff['fullpath'],
+                'extra': extra,
+                }
+
+            self.diffs.append({
+                'from': diff['from'],
+                'to': diff['to'],
+                'size': key.size / (2**20),
+                'path': diff['path']
+                })
+
+        logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
+        logger.debug("Vols:\n%s", pprint.pformat(self.vols))
 
     def listVolumes(self):
         """ Return list of volumes that are available. """
-        return self.vols.values()
+        return [vol for vol in self.vols.values() if not vol['extra']]
 
     def getVolume(self, uuid):
         """ Return info about volume. """
@@ -87,17 +135,24 @@ class S3Store(Store.Store):
                 return True
         return False
 
-    def receive(self, toUUID, fromUUID):
+    def receive(self, toUUID, fromUUID, path):
         """ Return a file-like (stream) object to store a diff. """
-        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID))
+        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID, self.prefix + path))
 
-    def _keyName(self, toUUID, fromUUID):
-        return "%s%s/%s" % (self.prefix, toUUID, fromUUID)
+    theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
-    def send(self, diff, stream):
+    def _keyName(self, toUUID, fromUUID, path):
+        return "%s/%s_%s" % (path, toUUID, fromUUID)
+
+    def _parseKeyName(self, name):
+        match = self.keyPattern.match(name)
+        return match.groupdict() if match else None
+
+    def send(self, toUUID, fromUUID, stream):
         """ Write the diff to the stream. """
-        key = self.bucket.get_key(self._keyName(diff.uuid, diff.previous))
-        key.get_contents_to_file(stream, cb=_displayProgress, num_cb=20)
+        path = self.vols[toUUID]['fullpath']
+        key = self.bucket.get_key(self._keyName(toUUID, fromUUID, path))
+        key.get_contents_to_file(stream, cb=_displayProgress, num_cb=theProgressCount)
 
     def _upload(self, stream, keyName):
         # key = self.bucket.get_key(keyName)
@@ -114,18 +169,17 @@ class S3Store(Store.Store):
                     break
                 uploader.upload(data)
 
-# For S3 uploads
-theChunkSize = 100 * 2**20
-
-# This does transparent S3 server-side encryption
-isEncrypted = True
-
-# TODO: Get a real version number
-theBtrfsVersion = '0.0'
-
 
 def _displayProgress(sent, total):
-    logger.info("Sent %f of %f MB (%f%%)", sent / (2**20), total / (2**20), 100*sent/total)
+    if not sys.stdout.isatty():
+        return
+    sys.stdout.write(
+        "\rSent %.3g of %.3g MiB (%d%%) %20s" %
+        (sent / (2**20), total / (2**20), int(100*sent/total), " ")
+        )
+    if sent == total:
+        sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 class _Uploader:
@@ -140,7 +194,6 @@ class _Uploader:
         return self
 
     def open(self):
-        logger.info("Beginning upload to %s", self.keyName)
         self.uploader = self.bucket.initiate_multipart_upload(
             self.keyName,
             encrypt_key=isEncrypted,
@@ -163,10 +216,16 @@ class _Uploader:
             self.uploader.cancel_upload()
         self.uploader = None
 
+    def fileno(self):
+        raise IOError("S3 uploads don't use file numbers.")
+
     def upload(self, bytes):
         self.chunkCount += 1
-        logger.info("Uploading chunk #%d for %s", self.chunkCount, self.keyName)
+        logger.info(
+            "Uploading %.3g MiB chunk #%d for %s",
+            len(bytes)/(2**20), self.chunkCount, self.keyName
+            )
         fileObject = io.BytesIO(bytes)
         self.uploader.upload_part_from_file(
-            fileObject, self.chunkCount, cb=_displayProgress, num_cb=20
+            fileObject, self.chunkCount, cb=_displayProgress, num_cb=theProgressCount
             )

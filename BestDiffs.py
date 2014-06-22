@@ -28,11 +28,19 @@ class _Node:
         if self.diffSink is None:
             return u"<None>"
 
-        volPath = self.diffSink.getVolume(self.uuid)['path']
-        prevPath = self.diffSink.getVolume(self.previous)['path'] if self.previous else None
+        try:
+            volPath = self.diffSink.getVolume(self.uuid)['path']
+        except KeyError:
+            volPath = self.uuid
 
-        return u"%s from %s (%f MB, %d ancestors)" % (
-            volPath, prevPath, self.diffSize, self.height
+        try:
+            prevPath = self.diffSink.getVolume(self.previous)['path']
+        except KeyError:
+            # logger.warn("Missing pre-requisite volume %s in %s", self.previous, self.diffSink)
+            prevPath = self.previous
+
+        return u"%s from %s (%.3g MiB, %d ancestors) in %s" % (
+            volPath, prevPath, self.diffSize, self.height, self.diffSink
             )
 
     def __str__(self):
@@ -46,12 +54,16 @@ class _Node:
         sinks = {}
         for n in nodes:
             count += 1
-            cost += n.diffCost
-            size += n.diffSize
-            if n.diffSink in sinks:
-                sinks[n.diffSink] += n.diffSize
-            else:
-                sinks[n.diffSink] = n.diffSize
+
+            if n.diffCost is not None:
+                cost += n.diffCost
+
+            if n.diffSize is not None:
+                size += n.diffSize
+                if n.diffSink in sinks:
+                    sinks[n.diffSink] += n.diffSize
+                else:
+                    sinks[n.diffSink] = n.diffSize
 
         return {"count": count, "cost": cost, "size": size, "sinks": sinks}
 
@@ -149,7 +161,9 @@ class BestDiffs:
 
     def iterDiffs(self):
         """ Return all diffs used in optimal network. """
-        for node in self.nodes.values():
+        nodes = self.nodes.values()
+        nodes.sort(key=lambda node: node.height)
+        for node in nodes:
             yield node
             # yield { 'from': node.previous, 'to': node.uuid, 'sink': node.diffSink,
             # 'cost': node.diffCost }
@@ -160,9 +174,14 @@ class BestDiffs:
 
     def _prune(self):
         """ Get rid of all intermediate nodes that aren't needed. """
-        for node in [node for node in self.nodes.values() if node.intermediate]:
-            if not [dep for dep in self.nodes if dep.previous == node]:
-                self.nodes.remove(node)
+        done = False
+        while not done:
+            done = True
+            for node in [node.uuid for node in self.nodes.values() if node.intermediate]:
+                if not [dep for dep in self.nodes.values() if dep.previous == node]:
+                    logger.debug("Removing unnecessary node %s", node)
+                    del self.nodes[node]
+                    done = False
 
     def _cost(self, sink, size, height):
         cost = 0
