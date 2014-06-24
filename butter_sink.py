@@ -12,6 +12,7 @@ import sys
 import BestDiffs
 import ButterStore
 import S3Store
+import Store
 
 theLogFormat = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
 # theLogFormat = '%(message)s'
@@ -66,6 +67,7 @@ def parseSink(uri):
     pattern = re.compile('^(?P<method>[^:/]*)://(?P<host>[^/]*)(/(?P<path>.*))?$')
     match = pattern.match(uri)
     if match is None:
+        logger.error("Can't parse snapshot store '%s'", uri)
         return None
     parts = match.groupdict()
 
@@ -106,22 +108,25 @@ def main(argv=sys.argv):
     best.analyze(source, dest)
 
     summary = best.summary()
-    logger.info("Optimal synchronization: %d diffs, %f MB total",
-                summary["count"], summary["size"])
+    logger.info("Optimal synchronization: %d diffs, %s total",
+                summary["count"], Store.humanize(2**10 * summary["size"]))
     for sink, size in summary["sinks"].items():
-        logger.info("%.3g MiB from %s", size, sink)
+        logger.info("%s from %s", Store.humanize(2**20 * size), sink)
 
     for diff in best.iterDiffs():
-        logger.info("Diff: %s", diff)
-        if not args.dry_run:
-            if diff.diffSink == dest:
-                continue
+        logger.info("%s: %s", "Use" if diff.diffSink == dest else "Xfer", diff)
 
-            path = diff.diffSink.getVolume(diff.uuid)['path']
+        if diff.diffSink == dest:
+            continue
 
-            stream = dest.receive(diff.uuid, diff.previous, path)
+        if args.dry_run:
+            continue
 
-            diff.diffSink.send(diff.uuid, diff.previous, stream)
+        path = diff.diffSink.getVolume(diff.uuid)['path']
+
+        stream = dest.receive(diff.uuid, diff.previous, path)
+
+        diff.diffSink.send(diff.uuid, diff.previous, stream)
 
     return 0
 

@@ -6,6 +6,7 @@ and "send" diffs are the directed edges.
 """
 
 # import pprint
+import Store
 
 import logging
 logger = logging.getLogger(__name__)
@@ -28,23 +29,26 @@ class _Node:
         if self.diffSink is None:
             return u"<None>"
 
-        try:
-            volPath = self.diffSink.getVolume(self.uuid)['path']
-        except KeyError:
-            volPath = self.uuid
-
-        try:
-            prevPath = self.diffSink.getVolume(self.previous)['path']
-        except KeyError:
-            # logger.warn("Missing pre-requisite volume %s in %s", self.previous, self.diffSink)
-            prevPath = self.previous
-
-        return u"%s from %s (%.3g MiB, %d ancestors) in %s" % (
-            volPath, prevPath, self.diffSize, self.height, self.diffSink
-            )
+        return u"%s from %s (%s, %d ancestors) in %s" % (
+            self._getPath(self.uuid),
+            self._getPath(self.previous),
+            Store.humanize(self.diffSize),
+            self.height,
+            self.diffSink
+        )
 
     def __str__(self):
         return unicode(self).encode('utf-8')
+
+    @staticmethod
+    def getPath(node):
+        return node._getPath(node.uuid) if node is not None else None
+
+    def _getPath(self, uuid):
+        try:
+            return self.diffSink.getVolume(uuid)['path']
+        except KeyError:
+            return uuid
 
     @staticmethod
     def summary(nodes):
@@ -97,13 +101,20 @@ class BestDiffs:
 
         while len(nodes) > 0:
             logger.debug("Analyzing %d nodes at height %d...", len(nodes), height)
+
+            nodes.sort(key=lambda node: node.totalCost if node is not None else None)
+
             for fromNode in nodes:
                 if fromNode is not None and fromNode.height >= height:
                     continue
 
                 fromCost = fromNode.totalCost if fromNode else 0
                 fromUUID = fromNode.uuid if fromNode else None
-                logger.debug("Examining edges from %s", fromUUID)
+
+                logger.debug(
+                    "Examining edges from %s (cost %s)",
+                    _Node.getPath(fromNode), Store.humanize(2 ** 20 * fromCost)
+                )
 
                 for sink in sinks:
                     for edge in sink.iterEdges(fromUUID):
@@ -128,10 +139,13 @@ class BestDiffs:
 
                         # Don't create circular paths
                         if self._wouldLoop(fromUUID, toUUID):
-                            logger.debug("Ignoring looping edge: %s", edge)
+                            logger.debug("Ignoring looping edge: %s", toNode._getPath(edge['to']))
                             continue
 
-                        logger.debug("Replacing edge %s...", toNode)
+                        logger.debug(
+                            "%s edge from %s replacing %s",
+                            Store.humanize(2 ** 20 * cost), sink, toNode
+                        )
 
                         toNode.height = height
                         toNode.totalCost = fromCost + cost
@@ -139,8 +153,6 @@ class BestDiffs:
                         toNode.diffSink = sink
                         toNode.diffCost = cost
                         toNode.diffSize = edge['size']
-
-                        logger.debug("...with better edge %s", toNode)
 
             nodes = [node for node in self.nodes.values() if node.height == height]
             height += 1
@@ -177,10 +189,10 @@ class BestDiffs:
         done = False
         while not done:
             done = True
-            for node in [node.uuid for node in self.nodes.values() if node.intermediate]:
-                if not [dep for dep in self.nodes.values() if dep.previous == node]:
-                    logger.debug("Removing unnecessary node %s", node)
-                    del self.nodes[node]
+            for node in [node for node in self.nodes.values() if node.intermediate]:
+                if not [dep for dep in self.nodes.values() if dep.previous == node.uuid]:
+                    logger.debug("Removing unnecessary node %s", _Node.getPath(node))
+                    del self.nodes[node.uuid]
                     done = False
 
     def _cost(self, sink, size, height):
@@ -193,6 +205,6 @@ class BestDiffs:
         cost += size if self.delete or sink != self.dest else 0
 
         # Corruption risk
-        cost *= 2 ** (height/4.0)
+        cost *= 2 ** (height / 4.0)
 
         return cost

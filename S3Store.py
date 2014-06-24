@@ -43,9 +43,12 @@ class S3Store(Store.Store):
         """
         self.bucketName = host
 
-        path = path.strip("/")
+        if path:
+            path = path.strip("/")
         if path:
             path += "/"
+        else:
+            path = ""
         self.prefix = path
 
         self.keyPattern = re.compile(S3Store.theKeyPattern % ())
@@ -174,8 +177,8 @@ def _displayProgress(sent, total):
     if not sys.stdout.isatty():
         return
     sys.stdout.write(
-        "\rSent %.3g of %.3g MiB (%d%%) %20s" %
-        (sent / (2**20), total / (2**20), int(100*sent/total), " ")
+        "\rSent %s of %s (%d%%) %20s" %
+        (Store.humanize(sent), Store.humanize(total), int(100*sent/total), " ")
         )
     if sent == total:
         sys.stdout.write("\n")
@@ -222,8 +225,8 @@ class _Uploader:
     def upload(self, bytes):
         self.chunkCount += 1
         logger.info(
-            "Uploading %.3g MiB chunk #%d for %s",
-            len(bytes)/(2**20), self.chunkCount, self.keyName
+            "Uploading %s chunk #%d for %s",
+            Store.humanize(len(bytes)), self.chunkCount, self.keyName
             )
         fileObject = io.BytesIO(bytes)
         self.uploader.upload_part_from_file(

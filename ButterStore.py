@@ -29,7 +29,7 @@ class ButterStore(Store.Store):
 
     def __unicode__(self):
         """ English description of self. """
-        return u"btrfs snapshots in %s" % (self.path)
+        return u"btrfs %s" % (self.path)
 
     def __str__(self):
         """ English description of self. """
@@ -37,7 +37,7 @@ class ButterStore(Store.Store):
 
     def listVolumes(self):
         """ Return list of volumes that are available. """
-        return self.volumes.values()
+        return [vol for vol in self.volumes.values() if not vol['extra']]
 
     def getVolume(self, uuid):
         """ Return dict of info for a specific volume. """
@@ -113,8 +113,8 @@ class ButterStore(Store.Store):
             # because data may be shared with read-write volumes not usable for send operations
             diffs = max(diffs, maxSize - minSize)
             rate = - math.log(1 - diffs / total) * (len(vols) - 1) / (maxGen - minGen)
-        except ZeroDivisionError:
-            logger.info("Using zero change rate.")
+        except (ZeroDivisionError, ValueError):
+            logger.debug("Using minimum change rate.")
             rate = 0
 
         rate = max(rate, theMinimumChangeRate)

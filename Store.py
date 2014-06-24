@@ -10,6 +10,10 @@
 # Volume: { uuid, path, size }
 # Diff: { toUUID, fromUUID, size }
 
+from __future__ import division
+
+import math
+
 
 class Store:
 
@@ -26,3 +30,13 @@ class Store:
     def send(self, toUUID, fromUUID, stream):
         """ Write the diff (toUUID from fromUUID) to the stream. """
         raise NotImplementedError
+
+
+def humanize(number):
+    """ Return a human-readable string for number. """
+    units = ('bytes', 'KB', 'MB', 'GB', 'TB')
+    base = 1000
+    pow = int(math.log(number, base)) if number > 0 else 0
+    pow = min(pow, len(units)-1)
+    mantissa = number / (base ** pow)
+    return "%.3g %s" % (mantissa, units[pow])

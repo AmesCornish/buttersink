@@ -22,17 +22,28 @@ class Butter:
 
         path indicates the btrfs volume, and also the directory containing snapshots.
         """
-        self.path = path
+        self.userPath = path
 
-        self.mount = subprocess.check_output(
+        # Get tree ID of the containing subvolume of path.
+        self.mountID = int(subprocess.check_output(
+            ["btrfs", "inspect", "rootid", self.userPath]
+        ).decode("utf-8"))
+
+        self.mountPath = subprocess.check_output(
             ["df", path]
         ).decode("utf-8").rsplit(None, 1)[1]
 
-        self.relPath = os.path.relpath(path, self.mount)
+        self.relPath = os.path.relpath(path, self.mountPath)
 
-        self.id = int(subprocess.check_output(
-            ["btrfs", "inspect", "rootid", self.mount]
-        ).decode("utf-8"))
+        butterPath = subprocess.check_output(
+            ["btrfs", "inspect", "subvol", str(self.mountID), self.mountPath]
+        ).decode("utf-8").strip()
+        self.butterPath = "<FS_TREE>/" + os.path.normpath(os.path.join(butterPath, self.relPath))
+
+        logger.debug(
+            "MountID: %d, Mount: %s, Path: %s",
+            self.mountID, self.mountPath, self.butterPath
+            )
 
         self.volumes = self._getVolumes()
 
@@ -46,20 +57,22 @@ class Butter:
 
         logger.info('Listing "%s" snapshots...', self.relPath)
 
-        subprocess.check_call(["btrfs", "fi", "sync", self.mount], stdout=DEVNULL)
+        subprocess.check_call(["btrfs", "fi", "sync", self.mountPath], stdout=DEVNULL)
 
         result = subprocess.check_output(
-            ["btrfs", "sub", "list", "-put", "-r" if readOnly else "", self.mount]
+            ["btrfs", "sub", "list", "-puta", "-r" if readOnly else "", self.mountPath]
         ).decode("utf-8")
 
+        logger.debug("User path in btrfs: %s", self.butterPath)
+
         for line in result.splitlines()[2:]:
+            logger.debug("%s", line)
+
             (id, gen, parent, top, uuid, path) = line.split()
 
-            if int(top) != self.id:
-                continue
+            extra = not path.startswith(self.butterPath)
 
-            if not path.startswith(self.relPath):
-                continue
+            logger.debug("%s snapshot path in btrfs: %s", "Extra" if extra else "REQUIRED", path)
 
             vol = {
                 'id': int(id),
@@ -67,19 +80,20 @@ class Butter:
                 'parent': int(parent),
                 # 'top': int(top),
                 'uuid': uuid,
-                'path': os.path.relpath(path, self.relPath),
+                'path': path if extra else os.path.relpath(path, self.butterPath),
+                'extra': extra,
             }
 
             vols[uuid] = vol
             volsByID[int(id)] = vol
 
         try:
-            usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mount])
+            usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mountPath])
         except subprocess.CalledProcessError:
             logger.warn("Rescanning subvolume sizes (this may take a while)...")
-            subprocess.check_call(["btrfs", "quota", "enable", self.mount])
-            subprocess.check_call(["btrfs", "quota", "rescan", "-w", self.mount])
-            usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mount])
+            subprocess.check_call(["btrfs", "quota", "enable", self.mountPath])
+            subprocess.check_call(["btrfs", "quota", "rescan", "-w", self.mountPath])
+            usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mountPath])
 
         for line in usage.splitlines()[2:]:
             (qgroup, totalSize, exclusiveSize) = line.split()
@@ -94,16 +108,16 @@ class Butter:
 
     def receive(self):
         """ Return a file-like (stream) object to store a diff. """
-        cmd = ["btrfs", "receive", self.path]
+        cmd = ["btrfs", "receive", self.userPath]
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         return process.stdin
 
     def send(self, uuid, parent, stream):
         """ Write a (incremental) snapshot to the stream. """
-        targetPath = os.path.join(self.path, self.volumes[uuid]['path'])
+        targetPath = os.path.join(self.userPath, self.volumes[uuid]['path'])
 
         if parent is not None:
-            parentPath = os.path.join(self.path, self.volumes[parent]['path'])
+            parentPath = os.path.join(self.userPath, self.volumes[parent]['path'])
             cmd = ["btrfs", "send", "-p", parentPath, targetPath]
         else:
             cmd = ["btrfs", "send", targetPath]
