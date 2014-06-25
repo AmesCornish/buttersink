@@ -17,7 +17,7 @@ if True:  # Imports and constants
         import sys
     if True:  # Constants
         # For S3 uploads
-        theChunkSize = 100 * 2**20
+        theChunkSize = 100 * 2 ** 20
 
         # Maximum xumber of progress reports per chunk
         theProgressCount = 50
@@ -103,14 +103,14 @@ class S3Store(Store.Store):
                 'path': diff['path'],
                 'fullpath': diff['fullpath'],
                 'extra': extra,
-                }
+            }
 
             self.diffs.append({
                 'from': diff['from'],
                 'to': diff['to'],
                 'size': key.size,
                 'path': diff['path']
-                })
+            })
 
         logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
         logger.debug("Vols:\n%s", pprint.pformat(self.vols))
@@ -153,11 +153,14 @@ class S3Store(Store.Store):
         match = self.keyPattern.match(name)
         return match.groupdict() if match else None
 
-    def send(self, toUUID, fromUUID, stream):
-        """ Write the diff to the stream. """
+    def send(self, toUUID, fromUUID, streamContext):
+        """ Write the diff to the streamContext. """
         path = self.vols[toUUID]['fullpath']
         key = self.bucket.get_key(self._keyName(toUUID, fromUUID, path))
-        key.get_contents_to_file(stream, cb=_displayProgress, num_cb=theProgressCount)
+
+        with streamContext as stream:
+            key.get_contents_to_file(stream, cb=_displayProgress, num_cb=theProgressCount)
+
         if sys.stdout.isatty():
             sys.stdout.write("\n")
 
@@ -182,27 +185,30 @@ def _displayProgress(sent, total):
         return
     sys.stdout.write(
         "\rSent %s of %s (%d%%) %20s" %
-        (Store.humanize(sent), Store.humanize(total), int(100*sent/total), " ")
-        )
+        (Store.humanize(sent), Store.humanize(total), int(100 * sent / total), " ")
+    )
     sys.stdout.flush()
 
 
 class _Uploader:
+
     def __init__(self, bucket, keyName):
         self.bucket = bucket
         self.keyName = keyName
         self.uploader = None
         self.chunkCount = None
-        self.open()
+        self.metadata = {}
 
     def __enter__(self):
+        self.open()
         return self
 
     def open(self):
         self.uploader = self.bucket.initiate_multipart_upload(
             self.keyName,
             encrypt_key=isEncrypted,
-            )
+            metadata=self.metadata,
+        )
         self.chunkCount = 0
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
@@ -215,6 +221,10 @@ class _Uploader:
     def close(self, abort=False):
         if not abort:
             self.uploader.complete_upload()
+            # You cannot change metadata after uploading
+            # if self.metadata:
+            #     key = self.bucket.get_key(self.keyName)
+            #     key.update_metadata(self.metadata)
         else:
             # TODO: this doesn't free storage used by part uploads currently in progress
             self.uploader.cancel_upload()
@@ -228,10 +238,10 @@ class _Uploader:
         logger.info(
             "Uploading %s chunk #%d for %s",
             Store.humanize(len(bytes)), self.chunkCount, self.keyName
-            )
+        )
         fileObject = io.BytesIO(bytes)
         self.uploader.upload_part_from_file(
             fileObject, self.chunkCount, cb=_displayProgress, num_cb=theProgressCount
-            )
+        )
         if sys.stdout.isatty():
             sys.stdout.write("\n")

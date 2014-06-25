@@ -36,6 +36,8 @@ class Butter:
         else:
             logger.debug("%s", btrfsVersionString)
 
+        self.btrfsVersion = btrfsVersionString
+
         self.userPath = path
 
         # Get tree ID of the containing subvolume of path.
@@ -126,8 +128,8 @@ class Butter:
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         return process.stdin
 
-    def send(self, uuid, parent, stream):
-        """ Write a (incremental) snapshot to the stream. """
+    def send(self, uuid, parent, streamContext):
+        """ Write a (incremental) snapshot to the stream context manager. """
         targetPath = os.path.normpath(os.path.join(self.userPath, self.volumes[uuid]['path']))
 
         if parent is not None:
@@ -143,10 +145,14 @@ class Butter:
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 
-        while True:
-            data = process.stdout.read(theChunkSize)
-            if len(data) == 0:
-                break
-            stream.write(data)
+        try:
+            streamContext.metadata['btrfsVersion'] = self.btrfsVersion
+        except AttributeError:
+            pass
 
-        stream.close()
+        with streamContext as stream:
+            while True:
+                data = process.stdout.read(theChunkSize)
+                if len(data) == 0:
+                    break
+                stream.write(data)

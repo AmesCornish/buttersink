@@ -123,6 +123,6 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, toUUID, fromUUID, stream):
+    def send(self, toUUID, fromUUID, streamContext):
         """ Write the diff to the stream. """
-        self.butter.send(toUUID, fromUUID, stream)
+        self.butter.send(toUUID, fromUUID, streamContext)

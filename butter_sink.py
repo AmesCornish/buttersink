@@ -124,9 +124,9 @@ def main(argv=sys.argv):
 
         path = diff.diffSink.getVolume(diff.uuid)['path']
 
-        stream = dest.receive(diff.uuid, diff.previous, path)
+        streamContext = dest.receive(diff.uuid, diff.previous, path)
 
-        diff.diffSink.send(diff.uuid, diff.previous, stream)
+        diff.diffSink.send(diff.uuid, diff.previous, streamContext)
 
     return 0
 

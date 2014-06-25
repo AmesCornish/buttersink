@@ -27,8 +27,8 @@ class Store:
         """ Return a file-like (stream) object to store a diff. """
         raise NotImplementedError
 
-    def send(self, toUUID, fromUUID, stream):
-        """ Write the diff (toUUID from fromUUID) to the stream. """
+    def send(self, toUUID, fromUUID, streamContext):
+        """ Write the diff (toUUID from fromUUID) to the stream context manager. """
         raise NotImplementedError
 
 
