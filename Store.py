@@ -48,7 +48,7 @@ def humanize(number):
     pow = int(math.log(number, base)) if number > 0 else 0
     pow = min(pow, len(units)-1)
     mantissa = number / (base ** pow)
-    return "%.3g %s" % (mantissa, units[pow])
+    return "%.3f %s" % (mantissa, units[pow])
 
 
 def printVolume(vol):
