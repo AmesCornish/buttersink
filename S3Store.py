@@ -62,7 +62,12 @@ class S3Store(Store.Store):
 
         logger.info("Listing %s contents...", self)
 
-        s3 = boto.connect_s3()
+        try:
+            s3 = boto.connect_s3()
+        except boto.exception.NoAuthHandlerFound:
+            logger.error("Try putting S3 credentials into ~/.boto")
+            raise
+
         self.bucket = s3.get_bucket(self.bucketName)
         self._listBucket()
 
