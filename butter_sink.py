@@ -99,7 +99,7 @@ def main(argv=sys.argv):
 
     if source is None:
         for vol in dest.listVolumes():
-            pprint.pprint(vol)
+            print(Store.printVolume(vol))
         return 0
 
     vols = source.listVolumes()
@@ -114,7 +114,7 @@ def main(argv=sys.argv):
         logger.info("%s from %s", Store.humanize(size), sink)
 
     for diff in best.iterDiffs():
-        logger.info("%s: %s", "Use" if diff.diffSink == dest else "Xfer", diff)
+        logger.info("%s: %s", "Keep" if diff.diffSink == dest else "Xfer", diff)
 
         if diff.diffSink == dest:
             continue

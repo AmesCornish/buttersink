@@ -32,6 +32,11 @@ class Store:
         raise NotImplementedError
 
 
+def printBytes(number):
+    """ Return a human-readable string for number. """
+    return humanize(number)
+
+
 def humanize(number):
     """ Return a human-readable string for number. """
     # units = ('bytes', 'KB', 'MB', 'GB', 'TB')
@@ -42,3 +47,14 @@ def humanize(number):
     pow = min(pow, len(units)-1)
     mantissa = number / (base ** pow)
     return "%.3g %s" % (mantissa, units[pow])
+
+
+def printVolume(vol):
+    """ Return string for dict containing volume info. """
+    size = "%s exclusive" % (printBytes(vol['exclusiveSize']))
+    if 'totalSize' in vol:
+        size = "%s, " % (printBytes(vol['totalSize'])) + size
+
+    return "%s %s (%s)" % (
+        vol['path'], vol['uuid'], size,
+        )

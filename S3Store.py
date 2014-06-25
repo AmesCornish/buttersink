@@ -108,6 +108,7 @@ class S3Store(Store.Store):
                 'path': diff['path'],
                 'fullpath': diff['fullpath'],
                 'extra': extra,
+                'exclusiveSize': key.size,
             }
 
             self.diffs.append({
