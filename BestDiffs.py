@@ -18,8 +18,6 @@ class _Node:
     def __init__(self, uuid, intermediate=False):
         self.uuid = uuid
         self.intermediate = intermediate
-        self.height = None
-        self.totalCost = None
         self.previous = None
         self.diffSink = None
         self.diffCost = None
@@ -29,11 +27,16 @@ class _Node:
         if self.diffSink is None:
             return u"<None>"
 
-        return u"%s from %s (%s, %d ancestors) in %s" % (
+        try:
+            ancestors = ", %d ancestors" % (self.height)
+        except AttributeError:
+            ancestors = ""
+
+        return u"%s from %s (%s%s) in %s" % (
             self._getPath(self.uuid),
             self._getPath(self.previous),
             Store.humanize(self.diffSize),
-            self.height,
+            ancestors,
             self.diffSink
         )
 
@@ -97,23 +100,23 @@ class BestDiffs:
         self.dest = sinks[0]
 
         nodes = [None]
-        height = 0
+        height = 1
 
         def sortKey(node):
             if node is None:
                 return None
-            return (node.intermediate, node.totalCost)
+            return (node.intermediate, self._totalCost(node))
 
         while len(nodes) > 0:
-            logger.debug("Analyzing %d nodes at height %d...", len(nodes), height)
+            logger.debug("Analyzing %d nodes for height %d...", len(nodes), height)
 
             nodes.sort(key=sortKey)
 
             for fromNode in nodes:
-                if fromNode is not None and fromNode.height >= height:
+                if self._height(fromNode) >= height:
                     continue
 
-                fromCost = fromNode.totalCost if fromNode else 0
+                fromCost = self._totalCost(fromNode)
                 fromUUID = fromNode.uuid if fromNode else None
 
                 logger.debug(
@@ -129,14 +132,13 @@ class BestDiffs:
                         if sink != self.dest and self.dest.hasEdge(toUUID, fromUUID):
                             continue
 
-                        # Get or create edge for this node
+                        cost = self._cost(sink, edge['size'], height)
+
                         if toUUID in self.nodes:
                             toNode = self.nodes[toUUID]
                         else:
                             toNode = _Node(toUUID, True)
                             self.nodes[toUUID] = toNode
-
-                        cost = self._cost(sink, edge['size'], height)
 
                         # Don't use a more-expensive path
                         if toNode.diffCost is not None and toNode.diffCost <= cost:
@@ -152,17 +154,35 @@ class BestDiffs:
                             Store.humanize(cost), sink, toNode
                         )
 
-                        toNode.height = height
-                        toNode.totalCost = fromCost + cost
                         toNode.previous = fromUUID
                         toNode.diffSink = sink
                         toNode.diffCost = cost
                         toNode.diffSize = edge['size']
 
-            nodes = [node for node in self.nodes.values() if node.height == height]
+            nodes = [node for node in self.nodes.values() if self._height(node) == height]
             height += 1
 
         self._prune()
+
+        for node in self.nodes.values():
+            node.height = self._height(node)
+
+    def _height(self, node):
+        if node is None:
+            return 0
+        else:
+            return 1 + self._height(self._getNode(node.previous))
+
+    def _totalCost(self, node):
+        if node is None:
+            return 0
+        elif node.diffSink is None:
+            return None
+        else:
+            return node.diffCost + self._totalCost(self._getNode(node.previous))
+
+    def _getNode(self, uuid):
+        return self.nodes[uuid] if uuid is not None else None
 
     def _wouldLoop(self, fromNode, toNode):
         if toNode is None:
@@ -179,7 +199,7 @@ class BestDiffs:
     def iterDiffs(self):
         """ Return all diffs used in optimal network. """
         nodes = self.nodes.values()
-        nodes.sort(key=lambda node: node.height)
+        nodes.sort(key=lambda node: self._height(node))
         for node in nodes:
             yield node
             # yield { 'from': node.previous, 'to': node.uuid, 'sink': node.diffSink,
@@ -210,6 +230,6 @@ class BestDiffs:
         cost += size if self.delete or sink != self.dest else 0
 
         # Corruption risk
-        cost *= 2 ** (height / 4.0)
+        cost += size * (2 ** (height - 2))
 
         return cost

@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
-theMinimumChangeRate = .0001
+theMinimumChangeRate = .00001
 
 
 class ButterStore(Store.Store):
@@ -87,8 +87,9 @@ class ButterStore(Store.Store):
         fromGen = fromVol['gen']
         genDiff = abs(toVol['gen'] - fromGen)
 
-        estimatedSize = max(toVol['exclusiveSize'], toVol['totalSize'] - fromVol['totalSize'])
+        estimatedSize = max(0, toVol['totalSize'] - fromVol['totalSize'])
         estimatedSize += toVol['totalSize'] * (1 - math.exp(-changeRate * genDiff))
+        estimatedSize = max(toVol['exclusiveSize'], estimatedSize)
 
         return estimatedSize
 
@@ -115,9 +116,9 @@ class ButterStore(Store.Store):
             rate = - math.log(1 - diffs / total) * (len(vols) - 1) / (maxGen - minGen)
         except (ZeroDivisionError, ValueError):
             logger.debug("Using minimum change rate.")
-            rate = 0
+            rate = theMinimumChangeRate
 
-        rate = max(rate, theMinimumChangeRate)
+        # rate = max(rate, theMinimumChangeRate)
 
         logger.debug("Change rate: %f", rate)
 
