@@ -46,7 +46,7 @@ class ButterStore(Store.Store):
     def iterEdges(self, fromVol):
         """ Return the edges available from fromVol.
 
-        Returned edge is a dict: 'to' UUID, estimated 'size' in MB
+        Returned edge is a dict: 'to' UUID, estimated 'size' in bytes
         """
         if fromVol is None:
             for toVol in self.volumes.values():

@@ -99,10 +99,15 @@ class BestDiffs:
         nodes = [None]
         height = 0
 
+        def sortKey(node):
+            if node is None:
+                return None
+            return (node.intermediate, node.totalCost)
+
         while len(nodes) > 0:
             logger.debug("Analyzing %d nodes at height %d...", len(nodes), height)
 
-            nodes.sort(key=lambda node: node.totalCost if node is not None else None)
+            nodes.sort(key=sortKey)
 
             for fromNode in nodes:
                 if fromNode is not None and fromNode.height >= height:
@@ -113,7 +118,7 @@ class BestDiffs:
 
                 logger.debug(
                     "Examining edges from %s (cost %s)",
-                    _Node.getPath(fromNode), Store.humanize(2 ** 20 * fromCost)
+                    _Node.getPath(fromNode), Store.humanize(fromCost)
                 )
 
                 for sink in sinks:
@@ -144,7 +149,7 @@ class BestDiffs:
 
                         logger.debug(
                             "%s edge from %s replacing %s",
-                            Store.humanize(2 ** 20 * cost), sink, toNode
+                            Store.humanize(cost), sink, toNode
                         )
 
                         toNode.height = height

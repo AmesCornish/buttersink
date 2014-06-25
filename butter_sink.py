@@ -109,9 +109,9 @@ def main(argv=sys.argv):
 
     summary = best.summary()
     logger.info("Optimal synchronization: %d diffs, %s total",
-                summary["count"], Store.humanize(2**10 * summary["size"]))
+                summary["count"], Store.humanize(summary["size"]))
     for sink, size in summary["sinks"].items():
-        logger.info("%s from %s", Store.humanize(2**20 * size), sink)
+        logger.info("%s from %s", Store.humanize(size), sink)
 
     for diff in best.iterDiffs():
         logger.info("%s: %s", "Use" if diff.diffSink == dest else "Xfer", diff)

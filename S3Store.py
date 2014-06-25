@@ -11,6 +11,7 @@ if True:  # Imports and constants
         import boto
         import io
         import logging
+        import os.path
         import pprint
         import re
         import sys
@@ -19,7 +20,7 @@ if True:  # Imports and constants
         theChunkSize = 100 * 2**20
 
         # Maximum xumber of progress reports per chunk
-        theProgressCount = 100
+        theProgressCount = 50
 
         # This does transparent S3 server-side encryption
         isEncrypted = True
@@ -107,7 +108,7 @@ class S3Store(Store.Store):
             self.diffs.append({
                 'from': diff['from'],
                 'to': diff['to'],
-                'size': key.size / (2**20),
+                'size': key.size,
                 'path': diff['path']
                 })
 
@@ -125,7 +126,7 @@ class S3Store(Store.Store):
     def iterEdges(self, fromVol):
         """ Return the edges available from fromVol.
 
-        Returned edge is a dict: 'to' UUID, estimated 'size' in MB
+        Returned edge is a dict: 'to' UUID, estimated 'size' in bytes
         """
         for diff in self.diffs:
             if diff['from'] == fromVol:
@@ -140,7 +141,8 @@ class S3Store(Store.Store):
 
     def receive(self, toUUID, fromUUID, path):
         """ Return a file-like (stream) object to store a diff. """
-        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID, self.prefix + path))
+        path = os.path.normpath(os.path.join(self.prefix, path))
+        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID, path))
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
@@ -156,6 +158,8 @@ class S3Store(Store.Store):
         path = self.vols[toUUID]['fullpath']
         key = self.bucket.get_key(self._keyName(toUUID, fromUUID, path))
         key.get_contents_to_file(stream, cb=_displayProgress, num_cb=theProgressCount)
+        if sys.stdout.isatty():
+            sys.stdout.write("\n")
 
     def _upload(self, stream, keyName):
         # key = self.bucket.get_key(keyName)
@@ -180,8 +184,6 @@ def _displayProgress(sent, total):
         "\rSent %s of %s (%d%%) %20s" %
         (Store.humanize(sent), Store.humanize(total), int(100*sent/total), " ")
         )
-    if sent == total:
-        sys.stdout.write("\n")
     sys.stdout.flush()
 
 
@@ -200,7 +202,6 @@ class _Uploader:
         self.uploader = self.bucket.initiate_multipart_upload(
             self.keyName,
             encrypt_key=isEncrypted,
-            metadata={'btrfsVersion': theBtrfsVersion},
             )
         self.chunkCount = 0
 
@@ -232,3 +233,5 @@ class _Uploader:
         self.uploader.upload_part_from_file(
             fileObject, self.chunkCount, cb=_displayProgress, num_cb=theProgressCount
             )
+        if sys.stdout.isatty():
+            sys.stdout.write("\n")

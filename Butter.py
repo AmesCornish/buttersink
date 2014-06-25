@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
-theChunkSize = 10 * (2**20)
+theChunkSize = 100 * (2**20)
 
 DEVNULL = open(os.devnull, 'wb')
 
@@ -22,6 +22,20 @@ class Butter:
 
         path indicates the btrfs volume, and also the directory containing snapshots.
         """
+        btrfsVersionString = subprocess.check_output(
+            ["btrfs", "--version"]
+            ).decode("utf-8").strip()
+
+        btrfsVersion = [int(num) for num in btrfsVersionString[7:].split(".")]
+
+        if btrfsVersion < [3, 14]:
+            logger.warn(
+                "%s is not supported.  Please upgrade your btrfs to at least 3.14",
+                btrfsVersionString
+                )
+        else:
+            logger.debug("%s", btrfsVersionString)
+
         self.userPath = path
 
         # Get tree ID of the containing subvolume of path.
@@ -101,8 +115,8 @@ class Butter:
 
             if volID in volsByID:
                 logger.debug("Snap info: %s", line)
-                volsByID[volID]['totalSize'] = float(totalSize) / 2 ** 20
-                volsByID[volID]['exclusiveSize'] = float(exclusiveSize) / 2 ** 20
+                volsByID[volID]['totalSize'] = int(totalSize)
+                volsByID[volID]['exclusiveSize'] = int(exclusiveSize)
 
         return vols
 
@@ -114,13 +128,18 @@ class Butter:
 
     def send(self, uuid, parent, stream):
         """ Write a (incremental) snapshot to the stream. """
-        targetPath = os.path.join(self.userPath, self.volumes[uuid]['path'])
+        targetPath = os.path.normpath(os.path.join(self.userPath, self.volumes[uuid]['path']))
 
         if parent is not None:
-            parentPath = os.path.join(self.userPath, self.volumes[parent]['path'])
+            parentPath = os.path.normpath(os.path.join(
+                self.userPath,
+                self.volumes[parent]['path']
+                ))
             cmd = ["btrfs", "send", "-p", parentPath, targetPath]
         else:
             cmd = ["btrfs", "send", targetPath]
+
+        logger.debug("Command: %s", cmd)
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 
