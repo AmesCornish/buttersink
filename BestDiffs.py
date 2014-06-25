@@ -28,7 +28,7 @@ class _Node:
             return u"<None>"
 
         try:
-            ancestors = ", %d ancestors" % (self.height)
+            ancestors = ", %d ancestors" % (self.height-1)
         except AttributeError:
             ancestors = ""
 
@@ -50,7 +50,7 @@ class _Node:
     def _getPath(self, uuid):
         try:
             return self.diffSink.getVolume(uuid)['path']
-        except KeyError:
+        except (KeyError, AttributeError):
             return uuid
 
     @staticmethod
@@ -178,8 +178,13 @@ class BestDiffs:
             return 0
         elif node.diffSink is None:
             return None
+
+        prevCost = self._totalCost(self._getNode(node.previous))
+
+        if prevCost is None:
+            return None
         else:
-            return node.diffCost + self._totalCost(self._getNode(node.previous))
+            return node.diffCost + prevCost
 
     def _getNode(self, uuid):
         return self.nodes[uuid] if uuid is not None else None
