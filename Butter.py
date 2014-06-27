@@ -3,6 +3,7 @@
 import subprocess
 import os.path
 import os
+import psutil
 import re
 
 import logging
@@ -88,7 +89,7 @@ class Butter:
 
         logger.info('Listing "%s" snapshots...', self.relPath)
 
-        subprocess.check_call(["btrfs", "fi", "sync", self.mountPath], stdout=DEVNULL)
+        subprocess.check_call(["sync"])
 
         result = subprocess.check_output(
             ["btrfs", "sub", "list", "-puta", "-r" if readOnly else "", self.mountPath]
@@ -146,7 +147,10 @@ class Butter:
     def receive(self):
         """ Return a file-like (stream) object to store a diff. """
         cmd = ["btrfs", "receive", self.userPath]
+        subprocess.check_call(["sync"])
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        ps = psutil.Process(process.pid)
+        ps.ionice(psutil.IOPRIO_CLASS_IDLE)
         return process.stdin
 
     def send(self, uuid, parent, streamContext):
@@ -164,7 +168,10 @@ class Butter:
 
         logger.debug("Command: %s", cmd)
 
+        subprocess.check_call(["sync"])
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        ps = psutil.Process(process.pid)
+        ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
         try:
             streamContext.metadata['btrfsVersion'] = self.btrfsVersion

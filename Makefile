@@ -1,9 +1,13 @@
 
 .PHONY : all
-all : apt.stamp
+all : apt.stamp pip.stamp
 
 apt.stamp : apt.txt
 	sudo apt-get install $$(cat $<)
+	touch $@
+
+pip.stamp : pip.txt
+	sudo pip install $$(cat $^)
 	touch $@
 
 ##############################################################################

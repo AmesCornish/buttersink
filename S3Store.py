@@ -9,6 +9,7 @@ if True:  # Imports and constants
         import Store
 
         import boto
+        import datetime
         import io
         import logging
         import os.path
@@ -24,9 +25,6 @@ if True:  # Imports and constants
 
         # This does transparent S3 server-side encryption
         isEncrypted = True
-
-        # TODO: Get a real version number
-        theBtrfsVersion = '0.0'
 
         logger = logging.getLogger(__name__)
         # logger.setLevel('DEBUG')
@@ -165,7 +163,7 @@ class S3Store(Store.Store):
         key = self.bucket.get_key(self._keyName(toUUID, fromUUID, path))
 
         with streamContext as stream:
-            key.get_contents_to_file(stream, cb=_displayProgress, num_cb=theProgressCount)
+            key.get_contents_to_file(stream, cb=_DisplayProgress(), num_cb=theProgressCount)
 
         if sys.stdout.isatty():
             sys.stdout.write("\n")
@@ -186,14 +184,29 @@ class S3Store(Store.Store):
                 uploader.upload(data)
 
 
-def _displayProgress(sent, total):
-    if not sys.stdout.isatty():
-        return
-    sys.stdout.write(
-        "\rSent %s of %s (%d%%) %20s" %
-        (Store.humanize(sent), Store.humanize(total), int(100 * sent / total), " ")
-    )
-    sys.stdout.flush()
+class _DisplayProgress:
+    def __init__(self):
+        self.startTime = datetime.datetime.now()
+
+    def __call__(self, sent, total):
+        if not sys.stdout.isatty():
+            return
+
+        elapsed = datetime.datetime.now() - self.startTime
+        mbps = (sent * 8 / (10**6) / elapsed.total_seconds())
+
+        sys.stdout.write(
+            "\r %s: Sent %s of %s (%d%%) (%.3g Mbps) %20s\r" % (
+                elapsed,
+                Store.humanize(sent),
+                Store.humanize(total),
+                int(100 * sent / total),
+                mbps,
+                " ",
+                )
+        )
+
+        sys.stdout.flush()
 
 
 class _Uploader:
@@ -247,7 +260,7 @@ class _Uploader:
         )
         fileObject = io.BytesIO(bytes)
         self.uploader.upload_part_from_file(
-            fileObject, self.chunkCount, cb=_displayProgress, num_cb=theProgressCount
+            fileObject, self.chunkCount, cb=_DisplayProgress(), num_cb=theProgressCount
         )
         if sys.stdout.isatty():
             sys.stdout.write("\n")
