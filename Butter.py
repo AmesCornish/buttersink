@@ -1,18 +1,22 @@
 """ Interface to btrfs-tools for snapshots. """
 
-import subprocess
-import os.path
-import os
-import psutil
-import re
+if True:  # Headers
+    if True:  # imports
+        import subprocess
+        import os.path
+        import os
+        import psutil
+        import re
+        import sys
 
-import logging
-logger = logging.getLogger(__name__)
-# logger.setLevel('DEBUG')
+    if True:  # constants
+        import logging
+        logger = logging.getLogger(__name__)
+        # logger.setLevel('DEBUG')
 
-theChunkSize = 100 * (2**20)
+        theChunkSize = 100 * (2**20)
 
-DEVNULL = open(os.devnull, 'wb')
+        DEVNULL = open(os.devnull, 'wb')
 
 
 class Butter:
@@ -33,17 +37,17 @@ class Butter:
 
         # Get tree ID of the containing subvolume of path.
         self.mountID = int(subprocess.check_output(
-            ["btrfs", "inspect", "rootid", self.userPath]
+            ["btrfs", "inspect", "rootid", self.userPath], stderr=sys.stderr
         ).decode("utf-8"))
 
         self.mountPath = subprocess.check_output(
-            ["df", path]
+            ["df", path], stderr=sys.stderr
         ).decode("utf-8").rsplit(None, 1)[1]
 
         self.relPath = os.path.relpath(path, self.mountPath)
 
         butterPath = subprocess.check_output(
-            ["btrfs", "inspect", "subvol", str(self.mountID), self.mountPath]
+            ["btrfs", "inspect", "subvol", str(self.mountID), self.mountPath], stderr=sys.stderr
         ).decode("utf-8").strip()
 
         self.topPath = "<FS_TREE>/" + butterPath
@@ -62,7 +66,7 @@ class Butter:
 
     def _getVersion(self, minVersion):
         btrfsVersionString = subprocess.check_output(
-            ["btrfs", "--version"]
+            ["btrfs", "--version"], stderr=sys.stderr
             ).decode("utf-8").strip()
 
         versionPattern = re.compile("[0-9]+(\.[0-9]+)*")
@@ -89,10 +93,11 @@ class Butter:
 
         logger.info('Listing "%s" snapshots...', self.relPath)
 
-        subprocess.check_call(["sync"])
+        subprocess.check_call(["sync"], stderr=sys.stderr)
 
         result = subprocess.check_output(
-            ["btrfs", "sub", "list", "-puta", "-r" if readOnly else "", self.mountPath]
+            ["btrfs", "sub", "list", "-puta", "-r" if readOnly else "", self.mountPath],
+            stderr=sys.stderr
         ).decode("utf-8")
 
         logger.debug("User path in btrfs: %s", self.butterPath)
@@ -126,12 +131,20 @@ class Butter:
             volsByID[int(id)] = vol
 
         try:
-            usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mountPath])
+            usage = subprocess.check_output(
+                ["btrfs", "qgroup", "show", self.mountPath],
+                stderr=sys.stderr)
         except subprocess.CalledProcessError:
             logger.warn("Rescanning subvolume sizes (this may take a while)...")
-            subprocess.check_call(["btrfs", "quota", "enable", self.mountPath])
-            subprocess.check_call(["btrfs", "quota", "rescan", "-w", self.mountPath])
-            usage = subprocess.check_output(["btrfs", "qgroup", "show", self.mountPath])
+            subprocess.check_call(
+                ["btrfs", "quota", "enable", self.mountPath],
+                stderr=sys.stderr)
+            subprocess.check_call(
+                ["btrfs", "quota", "rescan", "-w", self.mountPath],
+                stderr=sys.stderr)
+            usage = subprocess.check_output(
+                ["btrfs", "qgroup", "show", self.mountPath],
+                stderr=sys.stderr)
 
         for line in usage.splitlines()[2:]:
             (qgroup, totalSize, exclusiveSize) = line.split()
@@ -148,7 +161,7 @@ class Butter:
         """ Return a file-like (stream) object to store a diff. """
         cmd = ["btrfs", "receive", self.userPath]
         subprocess.check_call(["sync"])
-        process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
         return process.stdin
@@ -168,8 +181,8 @@ class Butter:
 
         logger.debug("Command: %s", cmd)
 
-        subprocess.check_call(["sync"])
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        subprocess.check_call(["sync"], stderr=sys.stderr)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
