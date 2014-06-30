@@ -51,6 +51,12 @@ def humanize(number):
     return "%.3f %s" % (mantissa, units[pow])
 
 
+def printUUID(uuid):
+    if uuid is None:
+        return None
+    return "%s...%s" % (uuid[:4], uuid[-4:])
+
+
 def printVolume(vol):
     """ Return string for dict containing volume info. """
     size = "%s exclusive" % (printBytes(vol['exclusiveSize']))

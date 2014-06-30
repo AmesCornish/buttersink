@@ -114,11 +114,10 @@ class ButterStore(Store.Store):
             # because data may be shared with read-write volumes not usable for send operations
             diffs = max(diffs, maxSize - minSize)
             rate = - math.log(1 - diffs / total) * (len(vols) - 1) / (maxGen - minGen)
+            rate /= 10  # Fudge
         except (ZeroDivisionError, ValueError):
             logger.debug("Using minimum change rate.")
             rate = theMinimumChangeRate
-
-        # rate = max(rate, theMinimumChangeRate)
 
         logger.debug("Change rate: %f", rate)
 
