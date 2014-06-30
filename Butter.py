@@ -117,13 +117,16 @@ class Butter:
 
             logger.debug("%s snapshot path in btrfs: %s", "Extra" if extra else "REQUIRED", path)
 
+            if not extra:
+                path = os.path.relpath(path, self.butterPath)
+
             vol = {
                 'id': int(id),
                 'gen': int(gen),
                 'parent': int(parent),
                 # 'top': int(top),
                 'uuid': uuid,
-                'path': path if extra else os.path.relpath(path, self.butterPath),
+                'path': path,
                 'extra': extra,
             }
 

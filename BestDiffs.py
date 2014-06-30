@@ -20,13 +20,9 @@ class _Node:
         self.intermediate = intermediate
         self.previous = None
         self.diffSink = None
-        self.diffCost = None
         self.diffSize = None
 
     def __unicode__(self):
-        if self.diffSink is None:
-            return u"<None>"
-
         try:
             ancestors = ", %d ancestors" % (self.height-1)
         except AttributeError:
@@ -45,25 +41,28 @@ class _Node:
 
     @staticmethod
     def getPath(node):
-        return node._getPath(node.uuid) if node is not None else None
+        """ Return printable description of node, if not None. """
+        if node is None:
+            return None
+        uuid = node.uuid
+        return node._getPath(uuid)
 
     def _getPath(self, uuid):
+        """ Return printable description of uuid. """
+        result = Store.printUUID(uuid)
         try:
-            return self.diffSink.getVolume(uuid)['path']
+            result = "%s (%s)" % (self.diffSink.getVolume(uuid)['path'], result)
         except (KeyError, AttributeError):
-            return uuid
+            pass
+        return result
 
     @staticmethod
     def summary(nodes):
         count = 0
-        cost = 0
         size = 0
         sinks = {}
         for n in nodes:
             count += 1
-
-            if n.diffCost is not None:
-                cost += n.diffCost
 
             if n.diffSize is not None:
                 size += n.diffSize
@@ -72,7 +71,7 @@ class _Node:
                 else:
                     sinks[n.diffSink] = n.diffSize
 
-        return {"count": count, "cost": cost, "size": size, "sinks": sinks}
+        return {"count": count, "size": size, "sinks": sinks}
 
 
 class BestDiffs:
@@ -105,7 +104,7 @@ class BestDiffs:
         def sortKey(node):
             if node is None:
                 return None
-            return (node.intermediate, self._totalCost(node))
+            return (node.intermediate, self._totalSize(node))
 
         while len(nodes) > 0:
             logger.debug("Analyzing %d nodes for height %d...", len(nodes), height)
@@ -116,15 +115,20 @@ class BestDiffs:
                 if self._height(fromNode) >= height:
                     continue
 
-                fromCost = self._totalCost(fromNode)
+                fromSize = self._totalSize(fromNode)
                 fromUUID = fromNode.uuid if fromNode else None
 
                 logger.debug(
-                    "Examining edges from %s (cost %s)",
-                    _Node.getPath(fromNode), Store.humanize(fromCost)
+                    "Examining edges from %s (total %s)",
+                    _Node.getPath(fromNode), Store.humanize(fromSize)
                 )
 
                 for sink in sinks:
+                    logger.debug(
+                        "Examining edges in %s",
+                        sink
+                    )
+
                     for edge in sink.iterEdges(fromUUID):
                         toUUID = edge['to']
 
@@ -132,16 +136,20 @@ class BestDiffs:
                         if sink != self.dest and self.dest.hasEdge(toUUID, fromUUID):
                             continue
 
-                        cost = self._cost(sink, edge['size'], height)
-
                         if toUUID in self.nodes:
                             toNode = self.nodes[toUUID]
                         else:
                             toNode = _Node(toUUID, True)
                             self.nodes[toUUID] = toNode
 
+                        newCost = self._cost(sink, edge['size'], fromSize, height)
+                        if toNode.diffSink is None:
+                            oldCost = None
+                        else:
+                            oldCost = self._cost(sink, toNode.diffSize, fromSize, self._height(toNode))
+
                         # Don't use a more-expensive path
-                        if toNode.diffCost is not None and toNode.diffCost <= cost:
+                        if oldCost is not None and oldCost <= newCost:
                             continue
 
                         # Don't create circular paths
@@ -150,13 +158,12 @@ class BestDiffs:
                             continue
 
                         logger.debug(
-                            "%s edge from %s replacing %s",
-                            Store.humanize(cost), sink, toNode
+                            "%s cost edge replacing %s cost %s",
+                            Store.humanize(newCost), Store.humanize(oldCost), toNode
                         )
 
                         toNode.previous = fromUUID
                         toNode.diffSink = sink
-                        toNode.diffCost = cost
                         toNode.diffSize = edge['size']
 
             nodes = [node for node in self.nodes.values() if self._height(node) == height]
@@ -173,18 +180,13 @@ class BestDiffs:
         else:
             return 1 + self._height(self._getNode(node.previous))
 
-    def _totalCost(self, node):
+    def _totalSize(self, node):
         if node is None:
             return 0
-        elif node.diffSink is None:
-            return None
 
-        prevCost = self._totalCost(self._getNode(node.previous))
+        prevSize = self._totalSize(self._getNode(node.previous))
 
-        if prevCost is None:
-            return None
-        else:
-            return node.diffCost + prevCost
+        return (node.diffSize or 0) + prevSize
 
     def _getNode(self, uuid):
         return self.nodes[uuid] if uuid is not None else None
@@ -208,10 +210,9 @@ class BestDiffs:
         for node in nodes:
             yield node
             # yield { 'from': node.previous, 'to': node.uuid, 'sink': node.diffSink,
-            # 'cost': node.diffCost }
 
     def summary(self):
-        """ Return summary count and cost and size in a dictionary. """
+        """ Return summary count and size in a dictionary. """
         return _Node.summary(self.nodes.values())
 
     def _prune(self):
@@ -225,7 +226,7 @@ class BestDiffs:
                     del self.nodes[node.uuid]
                     done = False
 
-    def _cost(self, sink, size, height):
+    def _cost(self, sink, size, prevSize, height):
         cost = 0
 
         # Transfer
@@ -235,6 +236,6 @@ class BestDiffs:
         cost += size if self.delete or sink != self.dest else 0
 
         # Corruption risk
-        cost += size * (2 ** (height - 2))
+        cost += (prevSize + size) * (2 ** (height - 8))
 
         return cost
