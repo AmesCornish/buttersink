@@ -3,6 +3,8 @@
 Based on optimzing a Directed Acyclic Graph (DAG),
 where snapshots are the nodes,
 and "send" diffs are the directed edges.
+
+Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 """
 
 # import pprint
@@ -146,7 +148,7 @@ class BestDiffs:
                         if toNode.diffSink is None:
                             oldCost = None
                         else:
-                            oldCost = self._cost(sink, toNode.diffSize, fromSize, self._height(toNode))
+                            oldCost = self._cost(toNode.diffSink, toNode.diffSize, fromSize, self._height(toNode))
 
                         # Don't use a more-expensive path
                         if oldCost is not None and oldCost <= newCost:
@@ -158,8 +160,10 @@ class BestDiffs:
                             continue
 
                         logger.debug(
-                            "%s cost edge replacing %s cost %s",
-                            Store.humanize(newCost), Store.humanize(oldCost), toNode
+                            "Replacing edge (%s -> %s cost) %s",
+                            Store.humanize(oldCost),
+                            Store.humanize(newCost),
+                            toNode
                         )
 
                         toNode.previous = fromUUID

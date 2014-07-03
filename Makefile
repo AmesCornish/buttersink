@@ -1,14 +1,35 @@
+##############################################################################
+# Makefile for buttersink project
+#
+# Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 .PHONY : all
-all : apt.stamp pip.stamp
+all : makestamps/apt makestamps/pip
 
-apt.stamp : apt.txt
+makestamps/apt : apt.txt | makestamps
 	sudo apt-get install $$(cat $<)
 	touch $@
 
-pip.stamp : pip.txt
-	sudo pip install $$(cat $^)
+makestamps/pip : pip.txt | makestamps
+	sudo pip install $$(cat $<)
 	touch $@
+
+makestamps :
+	mkdir $@
+
+.PHONY : clean_setup
+clean_setup :
+	./setup.py clean
+	rm -r build buttersink.egg-info || true
+
+.PHONY : install
+install :
+	./setup.py build
+	sudo ./setup.py install
+
+.PHONY : clean
+clean : clean_setup
+	rm -r make || true
 
 ##############################################################################
 # Test cases

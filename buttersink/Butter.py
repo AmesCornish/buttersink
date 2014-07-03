@@ -1,4 +1,7 @@
-""" Interface to btrfs-tools for snapshots. """
+""" Interface to btrfs-tools for snapshots.
+
+Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+"""
 
 if True:  # Headers
     if True:  # imports
@@ -33,6 +36,7 @@ class Butter:
         if not os.path.isdir(path):
             raise Exception("'%s' is not an existing directory" % (path))
 
+        # userPath - user specified mounted path to directory with snapshots
         self.userPath = path
 
         # Get tree ID of the containing subvolume of path.
@@ -40,17 +44,22 @@ class Butter:
             ["btrfs", "inspect", "rootid", self.userPath], stderr=sys.stderr
         ).decode("utf-8"))
 
+        # mountPath - mounted path to mount point (doesn't always work!)
         self.mountPath = subprocess.check_output(
             ["df", path], stderr=sys.stderr
         ).decode("utf-8").rsplit(None, 1)[1]
 
+        # relPath - relative path from mountPath to userPath
         self.relPath = os.path.relpath(path, self.mountPath)
 
         butterPath = subprocess.check_output(
             ["btrfs", "inspect", "subvol", str(self.mountID), self.mountPath], stderr=sys.stderr
         ).decode("utf-8").strip()
 
+        # topPath - btrfs path to immediately enclosing subvolume
         self.topPath = "<FS_TREE>/" + butterPath
+
+        # butterPath - btrfs path to user specified directory with snapshots
         self.butterPath = os.path.normpath(os.path.join(self.topPath, self.relPath))
 
         logger.debug(
@@ -169,16 +178,22 @@ class Butter:
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
         return process.stdin
 
-    def send(self, uuid, parent, streamContext):
+    def _getPath(self, uuid):
+        path = self.volumes[uuid]['path']
+        if path.startswith('<FS_TREE>'):
+            return path[9:]
+        else:
+            return os.path.normpath(os.path.join(
+                self.userPath,
+                path
+                ))
+
+    def send(self, uuid, parent, streamContext, progress=True):
         """ Write a (incremental) snapshot to the stream context manager. """
-        targetPath = os.path.normpath(os.path.join(self.userPath, self.volumes[uuid]['path']))
+        targetPath = self._getPath(uuid)
 
         if parent is not None:
-            parentPath = os.path.normpath(os.path.join(
-                self.userPath,
-                self.volumes[parent]['path']
-                ))
-            cmd = ["btrfs", "send", "-p", parentPath, targetPath]
+            cmd = ["btrfs", "send", "-p", self._getPath(parent), targetPath]
         else:
             cmd = ["btrfs", "send", targetPath]
 
@@ -191,6 +206,11 @@ class Butter:
 
         try:
             streamContext.metadata['btrfsVersion'] = self.btrfsVersion
+        except AttributeError:
+            pass
+
+        try:
+            streamContext.progress = progress
         except AttributeError:
             pass
 

@@ -1,3 +1,8 @@
+*.log
 *.pyc
 *.stamp
 *.sublime-workspace
+/build
+/buttersink.egg-info
+/dist
+/makestamps

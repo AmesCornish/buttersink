@@ -1,36 +1,59 @@
 #! /usr/bin/python
 
-""" Main program to synchronize btrfs snapshots.  See ReadMe.md. """
+""" Main program to synchronize btrfs snapshots.  See README.md.
+
+Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+"""
 
 import argparse
 import logging
-import pprint
 import re
 import sys
 
-# import SSHStore
 import BestDiffs
 import ButterStore
 import S3Store
 import Store
 
-theLogFormat = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
-# theLogFormat = '%(message)s'
-logging.basicConfig(level='INFO', format=theLogFormat)
+theVersion = '0.1'
+
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
+
+
+def _setupLogging(quietLevel, logFile):
+    # theDebugDisplayFormat = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+    theDisplayFormat = '%(message)s'
+    theLogFormat = '%(asctime)-15s: %(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+
+    root = logging.getLogger()
+    root.setLevel("DEBUG")
+
+    def add(handler, level, format):
+        handler.setLevel(level)
+        handler.setFormatter(logging.Formatter(format))
+        root.addHandler(handler)
+
+    add(logging.StreamHandler(sys.stdout), "INFO" if quietLevel < 2 else "WARN", theDisplayFormat)
+
+    if logFile is not None:
+        add(logging.StreamHandler(logFile), "DEBUG", theLogFormat)
 
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
     epilog="""
-<src>, <dst>:   file://path/to/directory
+<src>, <dst>:   file:///path/to/directory
                 ssh://[user@]host/path/to/directory (Not implemented)
                 s3://bucket/prefix[/snapshot]
 
 If only <dst> is supplied, just list available snapshots.
+
+Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+See README.md and LICENSE.txt for more info.
     """,
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
+
 command.add_argument('source', metavar='<src>', nargs='?',  # nargs='+',
                      help='a source of btrfs snapshots')
 command.add_argument('dest', metavar='<dst>',
@@ -42,20 +65,28 @@ command.add_argument('-n', '--dry-run', action="store_true",
 command.add_argument('-d', '--delete', action="store_true",
                      help='delete any snapshots in <dst> that are not in <src>',
                      )
-command.add_argument('-r', '--receive', action="store_true",
-                     help='internal command to intelligently receive diffs',
+
+command.add_argument('-q', '--quiet', action="count", default=0,
+                     help="""
+                     once: don't display progress.
+                     twice: only display error messages""",
                      )
-command.add_argument('-b', '--batch', action="store_true",
-                     help='non-interactive',
+command.add_argument('-l', '--logfile', type=argparse.FileType('w'),
+                     help='log debugging information to file',
                      )
-command.add_argument('-q', '--quiet', action="store_true",
-                     help='only display error messages',
-                     )
-command.add_argument('-v', '--verbose', action="store_true",
-                     help='display verbose debugging messages',
+command.add_argument('-V', '--version', action="version", version='%(prog)s ' + theVersion,
+                     help='display version',
                      )
 
-optionFile = "~/butter_sync.conf"
+command.add_argument('--remote-receive', action="store_true",
+                     help=argparse.SUPPRESS,
+                     )
+command.add_argument('--remote-send', action="store_true",
+                     help=argparse.SUPPRESS,
+                     )
+command.add_argument('--remote-list', action="store_true",
+                     help=argparse.SUPPRESS,
+                     )
 
 
 def parseSink(uri):
@@ -84,14 +115,15 @@ def parseSink(uri):
     return Sinks[parts['method']](parts['host'], parts['path'])
 
 
-def main(argv=sys.argv):
+def main():
     """ Main program. """
     args = command.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel("DEBUG")
+    _setupLogging(args.quiet, args.logfile)
 
     logger.debug("Arguments: %s", vars(args))
+
+    progress = args.quiet == 0
 
     source = parseSink(args.source)
 
@@ -126,7 +158,7 @@ def main(argv=sys.argv):
 
         streamContext = dest.receive(diff.uuid, diff.previous, path)
 
-        diff.diffSink.send(diff.uuid, diff.previous, streamContext)
+        diff.diffSink.send(diff.uuid, diff.previous, streamContext, progress=progress)
 
     return 0
 

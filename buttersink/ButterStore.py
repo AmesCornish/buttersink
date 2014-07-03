@@ -1,4 +1,7 @@
-""" Manage read-only volumes in local btrfs file system. """
+""" Manage read-only volumes in local btrfs file system.
+
+Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+"""
 
 from __future__ import division
 
@@ -123,6 +126,6 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, toUUID, fromUUID, streamContext):
+    def send(self, toUUID, fromUUID, streamContext, progress=True):
         """ Write the diff to the stream. """
-        self.butter.send(toUUID, fromUUID, streamContext)
+        self.butter.send(toUUID, fromUUID, streamContext, progress)

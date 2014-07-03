@@ -1,11 +1,14 @@
-""" Abstract and component classes for sources and sinks. """
+""" Abstract and component classes for sources and sinks.
+
+Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+"""
 
 # sink, source, src, dest: store
 # volume, diff
 
 # Classes: CamelCase
 # files: CamelCase.py
-# project: butter_sink
+# project: buttersink
 
 # Volume: { uuid, path, size }
 # Diff: { toUUID, fromUUID, size }
@@ -27,7 +30,7 @@ class Store:
         """ Return a file-like (stream) object to store a diff. """
         raise NotImplementedError
 
-    def send(self, toUUID, fromUUID, streamContext):
+    def send(self, toUUID, fromUUID, streamContext, progress=True):
         """ Write the diff (toUUID from fromUUID) to the stream context manager. """
         raise NotImplementedError
 

@@ -1,4 +1,7 @@
-""" Back-end for AWS S3. """
+""" Back-end for AWS S3.
+
+Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+"""
 
 # Docs: http://boto.readthedocs.org/en/latest/
 
@@ -85,7 +88,7 @@ class S3Store(Store.Store):
             diff = self._parseKeyName(key.name)
 
             if diff is None:
-                logger.warn("Can't parse '%s' in S3", key.name)
+                logger.info("Ignoring '%s' in S3", key.name)
                 continue
 
             if diff['from'] == 'None':
@@ -157,13 +160,16 @@ class S3Store(Store.Store):
         match = self.keyPattern.match(name)
         return match.groupdict() if match else None
 
-    def send(self, toUUID, fromUUID, streamContext):
+    def send(self, toUUID, fromUUID, streamContext, progress=True):
         """ Write the diff to the streamContext. """
         path = self.vols[toUUID]['fullpath']
         key = self.bucket.get_key(self._keyName(toUUID, fromUUID, path))
 
         with streamContext as stream:
-            key.get_contents_to_file(stream, cb=_DisplayProgress(), num_cb=theProgressCount)
+            if progress:
+                key.get_contents_to_file(stream, cb=_DisplayProgress(), num_cb=theProgressCount)
+            else:
+                key.get_contents_to_file(stream)
 
         if sys.stdout.isatty():
             sys.stdout.write("\n")
@@ -217,6 +223,7 @@ class _Uploader:
         self.uploader = None
         self.chunkCount = None
         self.metadata = {}
+        self.progress = True
 
     def __enter__(self):
         self.open()
@@ -259,8 +266,14 @@ class _Uploader:
             Store.humanize(len(bytes)), self.chunkCount, self.keyName
         )
         fileObject = io.BytesIO(bytes)
-        self.uploader.upload_part_from_file(
-            fileObject, self.chunkCount, cb=_DisplayProgress(), num_cb=theProgressCount
-        )
-        if sys.stdout.isatty():
-            sys.stdout.write("\n")
+
+        if self.progress:
+            self.uploader.upload_part_from_file(
+                fileObject, self.chunkCount, cb=_DisplayProgress(), num_cb=theProgressCount
+            )
+            if sys.stdout.isatty():
+                sys.stdout.write("\n")
+        else:
+            self.uploader.upload_part_from_file(
+                fileObject, self.chunkCount
+            )
