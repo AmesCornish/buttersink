@@ -102,7 +102,7 @@ class Butter:
 
         logger.info('Listing "%s" snapshots...', self.relPath)
 
-        subprocess.check_call(["sync"], stderr=sys.stderr)
+        self._fileSystemSync()
 
         result = subprocess.check_output(
             ["btrfs", "sub", "list", "-puta", "-r" if readOnly else "", self.mountPath],
@@ -172,7 +172,7 @@ class Butter:
     def receive(self):
         """ Return a file-like (stream) object to store a diff. """
         cmd = ["btrfs", "receive", self.userPath]
-        subprocess.check_call(["sync"])
+        self._fileSystemSync()
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
@@ -188,10 +188,19 @@ class Butter:
                 path
                 ))
 
+    def _fileSystemSync(self):
+        subprocess.check_call(["sync"], stderr=sys.stderr)
+        subprocess.check_call(
+            ["btrfs", "filesystem", "sync", self.mountPath],
+            stderr=sys.stderr)
+        subprocess.check_call(["sync"], stderr=sys.stderr)
+
     def send(self, uuid, parent, streamContext, progress=True):
         """ Write a (incremental) snapshot to the stream context manager. """
         targetPath = self._getPath(uuid)
 
+        self._fileSystemSync()
+        
         if parent is not None:
             cmd = ["btrfs", "send", "-p", self._getPath(parent), targetPath]
         else:
@@ -199,7 +208,6 @@ class Butter:
 
         logger.debug("Command: %s", cmd)
 
-        subprocess.check_call(["sync"], stderr=sys.stderr)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
