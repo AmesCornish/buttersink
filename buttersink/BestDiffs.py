@@ -117,17 +117,20 @@ class BestDiffs:
                 if self._height(fromNode) >= height:
                     continue
 
+                if fromNode is not None and fromNode.diffSize is None:
+                    continue
+
                 fromSize = self._totalSize(fromNode)
                 fromUUID = fromNode.uuid if fromNode else None
 
                 logger.debug(
-                    "Examining edges from %s (total %s)",
+                    "Following edges from %s (total %s)",
                     _Node.getPath(fromNode), Store.humanize(fromSize)
                 )
 
                 for sink in sinks:
                     logger.debug(
-                        "Examining edges in %s",
+                        "Listing edges in %s",
                         sink
                     )
 
@@ -148,7 +151,12 @@ class BestDiffs:
                         if toNode.diffSink is None:
                             oldCost = None
                         else:
-                            oldCost = self._cost(toNode.diffSink, toNode.diffSize, fromSize, self._height(toNode))
+                            oldCost = self._cost(
+                                toNode.diffSink,
+                                toNode.diffSize,
+                                fromSize,
+                                self._height(toNode)
+                                )
 
                         # Don't use a more-expensive path
                         if oldCost is not None and oldCost <= newCost:

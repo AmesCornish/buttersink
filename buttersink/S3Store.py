@@ -120,7 +120,7 @@ class S3Store(Store.Store):
             })
 
         logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
-        logger.debug("Vols:\n%s", pprint.pformat(self.vols))
+        # logger.debug("Vols:\n%s", pprint.pformat(self.vols))
 
     def listVolumes(self):
         """ Return list of volumes that are available. """

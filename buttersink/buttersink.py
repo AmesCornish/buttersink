@@ -98,8 +98,8 @@ def parseSink(uri):
     pattern = re.compile('^(?P<method>[^:/]*)://(?P<host>[^/]*)(/(?P<path>.*))?$')
     match = pattern.match(uri)
     if match is None:
-        logger.error("Can't parse snapshot store '%s'", uri)
-        return None
+        # logger.error("Can't parse snapshot store '%s'", uri)
+        raise Exception("Can't parse snapshot store '%s'" % (uri))
     parts = match.groupdict()
 
     if parts['method'] == 'file':
