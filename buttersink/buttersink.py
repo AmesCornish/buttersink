@@ -15,7 +15,7 @@ import ButterStore
 import S3Store
 import Store
 
-theVersion = '0.1+'
+theVersion = '0.2+'
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
