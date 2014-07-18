@@ -35,6 +35,16 @@ class Store:
         raise NotImplementedError
 
 
+class Diff:
+
+    def __init__(self):
+        
+class Volume:
+
+    def __init__(self):
+        self.uuids = set()
+        self.diffs = []
+
 def printBytes(number):
     """ Return a human-readable string for number. """
     return humanize(number)

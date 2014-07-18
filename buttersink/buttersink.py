@@ -154,11 +154,13 @@ def main():
         if args.dry_run:
             continue
 
-        path = diff.diffSink.getVolume(diff.uuid)['path']
+        volume = diff.diffSink.getVolume(diff.uuid)
 
-        streamContext = dest.receive(diff.uuid, diff.previous, path)
+        streamContext = dest.receive(diff.uuid, diff.previous, volume['path'])
 
         diff.diffSink.send(diff.uuid, diff.previous, streamContext, progress=progress)
+
+        dest.updateVolumeInfo(volume)
 
     return 0
 
