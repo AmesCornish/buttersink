@@ -5,21 +5,51 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 if True:  # Headers
     if True:  # imports
-        import subprocess
-        import os.path
+        import datetime
         import os
+        import os.path
         import psutil
         import re
+        import subprocess
         import sys
 
     if True:  # constants
         import logging
         logger = logging.getLogger(__name__)
-        # logger.setLevel('DEBUG')
 
-        theChunkSize = 100 * (2**20)
+        theChunkSize = 100 * (2 ** 20)
 
         DEVNULL = open(os.devnull, 'wb')
+
+# logger.setLevel('DEBUG')
+
+
+class _Reader:
+
+    """ Context Manager to write a snapshot. """
+
+    def __init__(self, stream, path):
+        self.stream = stream
+        self.path = path
+
+    def __enter__(self):
+        return self.stream.__enter__()
+
+    def __exit__(self, exceptionType, exception, trace):
+        self.stream.__exit__(exceptionType, exception, trace)
+
+        if exception is None:
+            return
+
+        if not os.path.exists(self.path):
+            return
+
+        partial = self.path + ".part"
+
+        if os.path.exists(partial):
+            partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
+
+        os.rename(self.path, partial)
 
 
 class Butter:
@@ -37,7 +67,7 @@ class Butter:
             raise Exception("'%s' is not an existing directory" % (path))
 
         # userPath - user specified mounted path to directory with snapshots
-        self.userPath = path
+        self.userPath = os.path.abspath(path)
 
         # Get tree ID of the containing subvolume of path.
         self.mountID = int(subprocess.check_output(
@@ -65,7 +95,7 @@ class Butter:
         logger.debug(
             "MountID: %d, Mount: %s, Path: %s",
             self.mountID, self.mountPath, self.butterPath
-            )
+        )
 
         self.volumes = self._getVolumes()
 
@@ -76,7 +106,7 @@ class Butter:
     def _getVersion(self, minVersion):
         btrfsVersionString = subprocess.check_output(
             ["btrfs", "--version"], stderr=sys.stderr
-            ).decode("utf-8").strip()
+        ).decode("utf-8").strip()
 
         versionPattern = re.compile("[0-9]+(\.[0-9]+)*")
         version = versionPattern.search(btrfsVersionString)
@@ -90,7 +120,7 @@ class Butter:
             logger.error(
                 "%s is not supported.  Please upgrade your btrfs to at least 3.14",
                 btrfsVersionString
-                )
+            )
         else:
             logger.debug("%s", btrfsVersionString)
 
@@ -169,14 +199,15 @@ class Butter:
 
         return vols
 
-    def receive(self):
+    def receive(self, path):
         """ Return a file-like (stream) object to store a diff. """
+        logger.debug("Receiving '%s'", path)
         cmd = ["btrfs", "receive", self.userPath]
         self._fileSystemSync()
-        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr)
+        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr, stdout=DEVNULL)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
-        return process.stdin
+        return _Reader(process.stdin, self._relative2LinuxPath(path))
 
     def _getPath(self, uuid):
         path = self.volumes[uuid]['path']
@@ -186,7 +217,7 @@ class Butter:
             return os.path.normpath(os.path.join(
                 self.userPath,
                 path
-                ))
+            ))
 
     def _fileSystemSync(self):
         subprocess.check_call(["sync"], stderr=sys.stderr)
@@ -195,12 +226,21 @@ class Butter:
             stderr=sys.stderr)
         subprocess.check_call(["sync"], stderr=sys.stderr)
 
+    def _linux2ButterPath(self, path):
+        raise NotImplementedError
+
+    def _butter2LinuxPath(self, path):
+        raise NotImplementedError
+
+    def _relative2LinuxPath(self, path):
+        return os.path.normpath(os.path.join(os.path.dirname(self.userPath), path))
+
     def send(self, uuid, parent, streamContext, progress=True):
         """ Write a (incremental) snapshot to the stream context manager. """
         targetPath = self._getPath(uuid)
 
         self._fileSystemSync()
-        
+
         if parent is not None:
             cmd = ["btrfs", "send", "-p", self._getPath(parent), targetPath]
         else:

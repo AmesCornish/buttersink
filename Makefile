@@ -31,6 +31,10 @@ install :
 clean : clean_setup
 	rm -r make || true
 
+.PHONY : pypi
+pypi : 
+	./setup.py bdist upload
+
 ##############################################################################
 # Test cases
 

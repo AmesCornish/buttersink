@@ -84,7 +84,7 @@ class ButterStore(Store.Store):
 
     def receive(self, toUUID, fromUUID, path):
         """ Return a file-like (stream) object to store a diff. """
-        return self.butter.receive()
+        return self.butter.receive(path)
 
     def _estimateSize(self, toVol, fromVol, changeRate):
         fromGen = fromVol['gen']
