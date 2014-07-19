@@ -5,36 +5,49 @@
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 """
 
-import argparse
-import logging
-import re
-import sys
+if True:  # Headers
+    if True:  # imports
 
-import BestDiffs
-import ButterStore
-import S3Store
-import Store
+        import argparse
+        import logging
+        import re
+        import sys
+
+        import BestDiffs
+        import ButterStore
+        import S3Store
+        import Store
 
 theVersion = '0.2+'
+theDebug = False
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
 
 def _setupLogging(quietLevel, logFile):
-    # theDebugDisplayFormat = '%(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
     theDisplayFormat = '%(message)s'
-    theLogFormat = '%(asctime)-15s: %(levelname)7s:%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+    theDebugDisplayFormat = (
+        '%(levelname)7s:'
+        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+        )
+    theLogFormat = (
+        '%(asctime)-15s: %(levelname)7s:'
+        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+        )
 
     root = logging.getLogger()
-    root.setLevel("DEBUG")
+    root.setLevel("INFO" if theDebug else "DEBUG")  # When debugging, this is handled per-logger
 
     def add(handler, level, format):
         handler.setLevel(level)
         handler.setFormatter(logging.Formatter(format))
         root.addHandler(handler)
 
-    add(logging.StreamHandler(sys.stdout), "INFO" if quietLevel < 2 else "WARN", theDisplayFormat)
+    level = "DEBUG" if theDebug else "INFO" if quietLevel < 2 else "WARN"
+    formatString = theDebugDisplayFormat if theDebug else theDisplayFormat
+
+    add(logging.StreamHandler(sys.stdout), level, formatString)
 
     if logFile is not None:
         add(logging.StreamHandler(logFile), "DEBUG", theLogFormat)
