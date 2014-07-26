@@ -141,7 +141,7 @@ class Structure:
             size = struct.calcsize(typeDef)
             if typeDef not in "xspP":
                 typeDef = 's'
-            typeDef = str(len*size) + typeDef
+            typeDef = str(len * size) + typeDef
 
         return (name, typeDef, theTypes[typeDef[-1:]])
 
@@ -203,10 +203,11 @@ def _writeChar(value):
 
 
 def _readString(data):
+    # CAUTION: Great for strings, horrible for buffers!
     return data.rstrip(chr(0))
 
 theTypes = {}
-tw = _TypeWriter("", reader=_readString)
+tw = _TypeWriter("")
 theTypes.update({t: tw for t in "sp"})
 tw = _TypeWriter(0)
 theTypes.update({t: tw for t in "bBhHiIlLqQfdP"})
@@ -234,6 +235,11 @@ class Buffer:
     def skip(self, len):
         """ Advance. """
         self.offset += len
+
+    @property
+    def len(self):
+        """ Count of remaining bytes. """
+        return len(self.buf) - self.offset
 
 
 # log = open("buttersink-test.log", "wb")
@@ -317,5 +323,3 @@ class Device(object):
         """ Close. """
         os.close(self.fd)
         self.fd = None
-
-
