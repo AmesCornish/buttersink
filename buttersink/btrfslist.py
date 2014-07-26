@@ -47,11 +47,17 @@ def main():
     args = command.parse_args()
         
     with btrfs.Mount(args.dir) as mount:
-        pprint.pprint(mount.FS_INFO())
-        pprint.pprint(mount.DEV_INFO(devid=1, uuid=""))
+        # fInfo = mount.FS_INFO()
+        # fInfo['fsid'] = fInfo['fsid'].encode('hex')
+        # pprint.pprint(fInfo)
 
-        # for vol in mount.subvolumes:
-        #         print vol
+        # dInfo = mount.DEV_INFO(devid=1, uuid="")
+        # dInfo['uuid'] = dInfo['uuid'].encode('hex')
+        # dInfo['path'] = dInfo['path'].rstrip('\0')
+        # pprint.pprint(dInfo)
+
+        for vol in mount.subvolumes.values():
+                print vol
 
     return 0
 
