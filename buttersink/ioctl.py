@@ -3,6 +3,7 @@
 # See <linux/ioctl.h> for C source.
 
 import array
+import collections
 import fcntl
 import os
 import struct
@@ -30,55 +31,214 @@ WRITE = 1
 READ = 2
 
 
-# structure values are ((fmt, name), ...) tuples
-# fmt can be a string or a structure itself
-
-
-def format(structure):
-    """ Return structure module format string for structure tuple. """
-    if isinstance(structure, (basestring, str, unicode)):
-        return structure
-
-    return "".join(format(fmt) for (fmt, name) in structure)
-
-
-def sizeof(structure):
-    """ Return size in bytes of (packed) structure tuple. """
-    return struct.calcsize(format(structure))
-
-
-# structure format strings for C type definitions
-
 class t:
 
-    """ Convenient types for translating linux headers to Python struct. """
+    """ Type definitions for translating linux C headers to Python struct format values. """
 
-    u64 = 'Q'
+    u8 = 'B'
+    u16 = 'H'
     u32 = 'L'
+    u64 = 'Q'
+
+    (le16, le32, le64) = (u16, u32, u64)  # Works on Linux x86
+
+    char = 'c'
 
     max_u64 = (1 << 64) - 1
 
-    @staticmethod
-    def char(len):
-        """ char fieldName[len]. """
-        return str(len) + 's'
+
+def unzip(listOfLists):
+    """ Inverse of zip to split lists. """
+    return zip(*listOfLists)
+
+
+class Structure:
+
+    """ Model a C struct.
+
+    Encapsulates a struct format with named item values.
+
+    structure fields are (typeDef, name, len=1) arguments.
+    typeDef can be a string or a structure itself.
+
+    Example Structures:
+        >>> s1 = Structure((t.char, 'char1'))
+        >>> s2 = Structure(
+        ... (t.u16, 'foo'),
+        ... (t.u8, 'bar', 8),
+        ... (s1, 'foobar'),
+        ... )
+        >>> s2.fmt
+        'H8sc'
+        >>> s2.size
+        11
+
+    Instance variables:
+        >>> s2._Tuple(1,2,3).__dict__
+        OrderedDict([('foo', 1), ('bar', 2), ('foobar', 3)])
+        >>> s2._packed
+        True
+        >>> s2._types.keys()
+        ['foo', 'bar', 'foobar']
+
+    Using a Structure:
+        >>> list(theTypes['x'].yieldArgs('hola'))
+        []
+        >>> list(theTypes['s'].yieldArgs('hola'))
+        ['hola']
+        >>> list(s1.yieldArgs({})) == [chr(0)]
+        True
+        >>> myValues = dict(foo=8, bar="hola", foobar=dict(char1='a'))
+        >>> args = s2.yieldArgs(myValues)
+        >>> list(args)
+        [8, 'hola', 'a']
+        >>> data = s2.write(myValues)
+        >>> data
+        array('B', [8, 0, 104, 111, 108, 97, 0, 0, 0, 0, 97])
+        >>> values = s2.read(data)
+        >>> values.foo
+        8
+        >>> values.foobar.char1
+        'a'
+        >>> values.__dict__
+        OrderedDict([('foo', 8), ('bar', 'hola'), ('foobar', StructureTuple(char1='a'))])
+
+    """
+
+    def __init__(self, *fields, **keyArgs):
+        """ Initialize. """
+        (names, formats, types) = unzip([self._parseDefinition(*f) for f in fields])
+
+        self._Tuple = collections.namedtuple("StructureTuple", names)
+
+        self._fmt = "".join(formats)
+        self._packed = keyArgs.get('packed', True)
+        self._struct = struct.Struct("=" + self._fmt if self._packed else self._fmt)
+
+        self._types = collections.OrderedDict(zip(names, types))
+
+    @property
+    def size(self):
+        """ Total packed data size. """
+        return self._struct.size
+
+    @property
+    def fmt(self):
+        """ struct module format string without the leading byte-order character. """
+        return self._fmt
 
     @staticmethod
-    def u8(len):
-        """ __u8 fieldName[len]. """
-        return t.char(len)
+    def _parseDefinition(typeDef, name, len=1):
+        """ Return (name, format, type) for field.
 
-    @staticmethod
-    def pad_64(len):
-        """ Number of reserved u64. """
-        return t.pad_8(8*len)
+        type.popValue() and type.yieldArgs() must be implemented.
 
-    @staticmethod
-    def pad_8(len):
-        """ Number of reserved u8. """
-        return str(len) + 'x'
+        """
+        if isinstance(typeDef, Structure):
+            return (name, typeDef.fmt, typeDef)
 
-    
+        if len != 1:
+            size = struct.calcsize(typeDef)
+            if typeDef not in "xspP":
+                typeDef = 's'
+            typeDef = str(len*size) + typeDef
+
+        return (name, typeDef, theTypes[typeDef[-1:]])
+
+    def yieldArgs(self, keyArgs):
+        """ Take (nested) dict(s) of args to set, and return flat list of args. """
+        for (name, typeObj) in self._types.items():
+            for arg in typeObj.yieldArgs(keyArgs.get(name, None)):
+                yield arg
+
+    def write(self, keyArgs):
+        """ Write specified key arguments into data structure. """
+        # bytearray doesn't work with fcntl
+        args = array.array('B', (0,) * self.size)
+        self._struct.pack_into(args, 0, *list(self.yieldArgs(keyArgs)))
+        return args
+
+    def popValue(self, argList):
+        """ Take a flat arglist, and pop relevent values and return as a value or tuple. """
+        # return self._Tuple(*[name for (name, typeObj) in self._types.items()])
+        return self._Tuple(*[typeObj.popValue(argList) for (name, typeObj) in self._types.items()])
+
+    def read(self, data, offset=0):
+        """ Read data structure and return (nested) named tuple(s). """
+        args = list(self._struct.unpack_from(data, offset))
+        args.reverse()
+        return self.popValue(args)
+
+
+class _SkipType:
+
+    def popValue(self, argList):
+        return None
+
+    def yieldArgs(self, arg):
+        if False:
+            yield None  # Make this a generator
+
+
+class _TypeWriter:
+
+    def __init__(self, default, count=1, writer=None, reader=None):
+        self._writer = writer or (lambda x: x or default)
+        self._reader = reader or (lambda x: x)
+
+    def popValue(self, argList):
+        return self._reader(argList.pop())
+
+    def yieldArgs(self, arg):
+        yield self._writer(arg)
+
+
+def _writeChar(value):
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except ValueError:
+        return ord(value[0])
+
+
+def _readString(data):
+    return data.rstrip(chr(0))
+
+theTypes = {}
+tw = _TypeWriter("", reader=_readString)
+theTypes.update({t: tw for t in "sp"})
+tw = _TypeWriter(0)
+theTypes.update({t: tw for t in "bBhHiIlLqQfdP"})
+theTypes.update({'?': _TypeWriter(False)})
+theTypes.update({'x': _SkipType()})
+tw = _TypeWriter('\0')
+theTypes.update({t: tw for t in "c"})
+
+
+class Buffer:
+
+    """ Contains bytes and an offset. """
+
+    def __init__(self, buf, offset=0):
+        """ Initialize. """
+        self.buf = buf
+        self.offset = offset
+
+    def read(self, structure):
+        """ Read and advance. """
+        start = self.offset
+        self.skip(structure.size)
+        return structure.read(self.buf, start)
+
+    def skip(self, len):
+        """ Advance. """
+        self.offset += len
+
+
+# log = open("buttersink-test.log", "wb")
+
+
 class Control:
 
     """ Callable linux io control (ioctl). """
@@ -86,26 +246,26 @@ class Control:
     def __init__(self, direction, op, structure):
         """ Initialize. """
         self.structure = structure
-        self.fmt = struct.Struct(format(structure))
-        self.ioc = self._ioc(direction, self.magic, op, self.fmt.size)
+        self.ioc = self._iocNumber(direction, self.magic, op, structure.size)
 
     def __call__(self, device, **args):
         """ Execute the call. """
-        args = self._packArgs(**args)
+        args = self.structure.write(args)
+        # log.write(args)
         ret = fcntl.ioctl(device.fd, self.ioc, args, True)
+        # log.write(args)
         assert ret == 0, ret
-        results = self._unpackArgs(args)
-        return results
+        return self.structure.read(args)
 
     @staticmethod
-    def _ioc(dir, type, nr, size):
+    def _iocNumber(dir, type, nr, size):
         return dir << DIRSHIFT | \
             type << TYPESHIFT | \
             nr << NRSHIFT | \
             size << SIZESHIFT
 
     @classmethod
-    def IOC(cls, dir, op, structure=None):
+    def _IOC(cls, dir, op, structure=None):
         """ Encode an ioctl id. """
         control = cls(dir, op, structure)
 
@@ -115,71 +275,27 @@ class Control:
 
     @classmethod
     def IO(cls, op):
-        """ ioctl id with no arguments. """
-        return cls.IOC(NONE, op)
+        """ Returns an ioctl Device method with no arguments. """
+        return cls._IOC(NONE, op)
 
     @classmethod
     def IOW(cls, op, structure):
-        """ ioctl id with WRITE arguments. """
-        return cls.IOC(WRITE, op, structure)
+        """ Returns an ioctl Device method with WRITE arguments. """
+        return cls._IOC(WRITE, op, structure)
 
     @classmethod
     def IOWR(cls, op, structure):
-        """ ioctl id with READ and WRITE arguments. """
-        return cls.IOC(READ | WRITE, op, structure)
+        """ Returns an ioctl Device method with READ and WRITE arguments. """
+        return cls._IOC(READ | WRITE, op, structure)
 
     @classmethod
     def IOR(cls, op, structure):
-        """ ioctl id with READ arguments. """
-        return cls.IOC(READ, op, structure)
-
-    @staticmethod
-    def _listArgs(structure, keyArgs):
-        if isinstance(structure, (str, unicode, basestring)):
-            if keyArgs is None:
-                cType = structure[-1:]
-                if cType in "sp":
-                    yield ""
-                elif cType in "c":
-                    yield "\0"
-                elif cType in "?":
-                    yield False
-                elif cType in "x":
-                    pass
-                else:
-                    yield 0
-            else:
-                yield keyArgs
-            return
-
-        for (fmt, name) in structure:
-            for value in Control._listArgs(fmt, keyArgs.get(name, None)):
-                yield value
-
-    def _packArgs(self, **keyArgs):
-        args = array.array('B', (0,)*self.fmt.size)
-        # args = bytearray(struct.calcsize(fmt))  # bytearray doesn't work with fcntl
-        self.fmt.pack_into(args, 0, *list(Control._listArgs(self.structure, keyArgs)))
-        return args
-
-    @staticmethod
-    def _dictArgs(structure, argList):
-        if isinstance(structure, (str, unicode, basestring)):
-            cType = structure[-1:]
-            if cType in "x":
-                return None
-            return argList.pop()
-
-        return {name: Control._dictArgs(fmt, argList) for (fmt, name) in structure}
-
-    def _unpackArgs(self, args):
-        argList = list(self.fmt.unpack_from(args, 0))
-        argList.reverse()
-        return Control._dictArgs(self.structure, argList)
+        """ Returns an ioctl Device method with READ arguments. """
+        return cls._IOC(READ, op, structure)
 
 
 class Device(object):
-    
+
     """ Context manager for a linux file descriptor for a file or device special file.
 
     Opening and closing is handled by the Python "with" statement.
@@ -201,3 +317,5 @@ class Device(object):
         """ Close. """
         os.close(self.fd)
         self.fd = None
+
+
