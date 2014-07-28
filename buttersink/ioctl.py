@@ -5,6 +5,7 @@
 import array
 import collections
 import fcntl
+import itertools
 import os
 import struct
 
@@ -46,10 +47,53 @@ class t:
 
     max_u64 = (1 << 64) - 1
 
+    @staticmethod
+    def writeChar(value):
+        """ Write a single-character string as a one-byte (u8) number. """
+        return 0 if value is None else ord(value[0])
+
+    @staticmethod
+    def writeString(data):
+        """ Write a string as null-terminated c string (bytes). """
+        if data is None:
+            return chr(0)
+
+        return data.encode('utf-8') + chr(0)
+
+    @staticmethod
+    def readString(data):
+        """ Read a null-terminated (c) string. """
+        # CAUTION: Great for strings, horrible for buffers!
+        return data.decode('utf-8').partition(chr(0))[0]
+
 
 def unzip(listOfLists):
     """ Inverse of zip to split lists. """
     return zip(*listOfLists)
+
+
+class _SkipType:
+
+    def popValue(self, argList):
+        return None
+
+    def yieldArgs(self, arg):
+        if False:
+            yield None  # Make this a generator
+
+
+class _TypeWriter:
+
+    def __init__(self, default, reader=None, writer=None):
+        self._default = default
+        self._writer = writer or (lambda x: x)
+        self._reader = reader or (lambda x: x)
+
+    def popValue(self, argList):
+        return self._reader(argList.pop())
+
+    def yieldArgs(self, arg):
+        yield self._writer(arg) or self._default
 
 
 class Structure:
@@ -65,7 +109,7 @@ class Structure:
         >>> s1 = Structure((t.char, 'char1'))
         >>> s2 = Structure(
         ... (t.u16, 'foo'),
-        ... (t.u8, 'bar', 8),
+        ... (t.u8, 'bar', 8, t.readString, t.writeString),
         ... (s1, 'foobar'),
         ... )
         >>> s2.fmt
@@ -82,26 +126,17 @@ class Structure:
         ['foo', 'bar', 'foobar']
 
     Using a Structure:
-        >>> list(theTypes['x'].yieldArgs('hola'))
-        []
-        >>> list(theTypes['s'].yieldArgs('hola'))
-        ['hola']
-        >>> list(s1.yieldArgs({})) == [chr(0)]
-        True
-        >>> myValues = dict(foo=8, bar="hola", foobar=dict(char1='a'))
-        >>> args = s2.yieldArgs(myValues)
-        >>> list(args)
-        [8, 'hola', 'a']
+        >>> myValues = dict(foo=8, bar=u"hola", foobar=dict(char1='a'))
         >>> data = s2.write(myValues)
         >>> data
         array('B', [8, 0, 104, 111, 108, 97, 0, 0, 0, 0, 97])
         >>> values = s2.read(data)
+        >>> values
+        StructureTuple(foo=8, bar=u'hola', foobar=StructureTuple(char1='a'))
         >>> values.foo
         8
         >>> values.foobar.char1
         'a'
-        >>> values.__dict__
-        OrderedDict([('foo', 8), ('bar', 'hola'), ('foobar', StructureTuple(char1='a'))])
 
     """
 
@@ -127,8 +162,20 @@ class Structure:
         """ struct module format string without the leading byte-order character. """
         return self._fmt
 
+    # This produces a dictionary of { fmtChar: defaultValue }
+    defaults = dict(itertools.chain(*[
+        [(fmtChar, defaultValue) for fmtChar in s]
+        for (s, defaultValue) in [
+            ("sp", ""),
+            ("bBhHiIlLqQfdP", 0),
+            ("?", False),
+            ("c", chr(0)),
+        ]]))
+
+    skipType = _SkipType()
+
     @staticmethod
-    def _parseDefinition(typeDef, name, len=1):
+    def _parseDefinition(typeDef, name, len=1, reader=None, writer=None):
         """ Return (name, format, type) for field.
 
         type.popValue() and type.yieldArgs() must be implemented.
@@ -143,7 +190,14 @@ class Structure:
                 typeDef = 's'
             typeDef = str(len * size) + typeDef
 
-        return (name, typeDef, theTypes[typeDef[-1:]])
+        fmtChar = typeDef[-1:]
+
+        if fmtChar == 'x':
+            typeObj = Structure.skipType
+        else:
+            typeObj = _TypeWriter(Structure.defaults[fmtChar], reader, writer)
+
+        return (name, typeDef, typeObj)
 
     def yieldArgs(self, keyArgs):
         """ Take (nested) dict(s) of args to set, and return flat list of args. """
@@ -170,53 +224,6 @@ class Structure:
         return self.popValue(args)
 
 
-class _SkipType:
-
-    def popValue(self, argList):
-        return None
-
-    def yieldArgs(self, arg):
-        if False:
-            yield None  # Make this a generator
-
-
-class _TypeWriter:
-
-    def __init__(self, default, count=1, writer=None, reader=None):
-        self._writer = writer or (lambda x: x or default)
-        self._reader = reader or (lambda x: x)
-
-    def popValue(self, argList):
-        return self._reader(argList.pop())
-
-    def yieldArgs(self, arg):
-        yield self._writer(arg)
-
-
-def _writeChar(value):
-    if value is None:
-        return 0
-    try:
-        return int(value)
-    except ValueError:
-        return ord(value[0])
-
-
-def _readString(data):
-    # CAUTION: Great for strings, horrible for buffers!
-    return data.rstrip(chr(0))
-
-theTypes = {}
-tw = _TypeWriter("")
-theTypes.update({t: tw for t in "sp"})
-tw = _TypeWriter(0)
-theTypes.update({t: tw for t in "bBhHiIlLqQfdP"})
-theTypes.update({'?': _TypeWriter(False)})
-theTypes.update({'x': _SkipType()})
-tw = _TypeWriter('\0')
-theTypes.update({t: tw for t in "c"})
-
-
 class Buffer:
 
     """ Contains bytes and an offset. """
@@ -240,9 +247,6 @@ class Buffer:
     def len(self):
         """ Count of remaining bytes. """
         return len(self.buf) - self.offset
-
-
-# log = open("buttersink-test.log", "wb")
 
 
 class Control:
