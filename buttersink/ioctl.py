@@ -66,6 +66,12 @@ class t:
         # CAUTION: Great for strings, horrible for buffers!
         return data.decode('utf-8').partition(chr(0))[0]
 
+    @staticmethod
+    def readBuffer(data):
+        """ Trim zero bytes in buffer. """
+        # CAUTION: Great for strings, horrible for buffers!
+        return data.rstrip(chr(0))
+
 
 def unzip(listOfLists):
     """ Inverse of zip to split lists. """
@@ -256,16 +262,21 @@ class Control:
     def __init__(self, direction, op, structure):
         """ Initialize. """
         self.structure = structure
-        self.ioc = self._iocNumber(direction, self.magic, op, structure.size)
+        size = structure.size if structure else 0
+        self.ioc = self._iocNumber(direction, self.magic, op, size)
 
     def __call__(self, device, **args):
         """ Execute the call. """
-        args = self.structure.write(args)
-        # log.write(args)
-        ret = fcntl.ioctl(device.fd, self.ioc, args, True)
-        # log.write(args)
-        assert ret == 0, ret
-        return self.structure.read(args)
+        if self.structure is not None:
+            args = self.structure.write(args)
+            # log.write(args)
+            ret = fcntl.ioctl(device.fd, self.ioc, args, True)
+            # log.write(args)
+            assert ret == 0, ret
+            return self.structure.read(args)
+        else:
+            ret = fcntl.ioctl(device.fd, self.ioc)
+            assert ret == 0, ret
 
     @staticmethod
     def _iocNumber(dir, type, nr, size):

@@ -8,11 +8,12 @@
 # just a few useful routines for my current project.
 
 from ioctl import Structure, t
+import collections
 import ioctl
 import logging
 import pprint
 logger = logging.getLogger(__name__)
-logger.setLevel('INFO')
+# logger.setLevel('DEBUG')
 
 
 def pretty(obj):
@@ -28,6 +29,23 @@ def pretty(obj):
     #     except KeyError:
     #         logger.exception("Funny error.")
 
+
+def bytes2uuid(b):
+    """ Return standard human-friendly UUID. """
+    if b.strip(chr(0)) == '':
+        return None
+
+    s = b.encode('hex')
+    return "%s-%s-%s-%s-%s" % (s[0:8], s[8:12], s[12:16], s[16:20], s[20:])
+
+
+def uuid2bytes(u):
+    """ Return compact bytes for UUID. """
+    if u is None:
+        return ''
+
+    return "".join(u.split('-')).decode('hex')
+
 BTRFS_DEVICE_PATH_NAME_MAX = 1024
 BTRFS_SUBVOL_CREATE_ASYNC = (1 << 0)
 BTRFS_SUBVOL_RDONLY = (1 << 1)
@@ -39,7 +57,7 @@ BTRFS_INO_LOOKUP_PATH_MAX = 4080
 btrfs_ioctl_ino_lookup_args = Structure(
     (t.u64, 'treeid'),
     (t.u64, 'objectid'),
-    (t.char, 'name', BTRFS_INO_LOOKUP_PATH_MAX),
+    (t.char, 'name', BTRFS_INO_LOOKUP_PATH_MAX, t.readString, t.writeString),
     packed=True
 )
 
@@ -73,7 +91,7 @@ btrfs_ioctl_search_header = Structure(
 
 btrfs_ioctl_dev_info_args = Structure(
     (t.u64, 'devid'),                # /* in/out */
-    (t.u8, 'uuid', BTRFS_UUID_SIZE),     # /* in/out */
+    (t.u8, 'uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),     # /* in/out */
     (t.u64, 'bytes_used'),           # /* out */
     (t.u64, 'total_bytes'),          # /* out */
     (t.u64, 'unused', 379),          # /* pad to 4k */
@@ -84,8 +102,8 @@ btrfs_ioctl_dev_info_args = Structure(
 btrfs_ioctl_fs_info_args = Structure(
     (t.u64, 'max_id'),               # /* out */
     (t.u64, 'num_devices'),          # /* out */
-    (t.u8, 'fsid', BTRFS_FSID_SIZE),     # /* out */
-    (t.u64, 'reserved', 124),            # /* pad to 1k */
+    (t.u8, 'fsid', BTRFS_FSID_SIZE, bytes2uuid, uuid2bytes),     # /* out */
+    (t.u64, 'reserved', 124, t.readBuffer),            # /* pad to 1k */
     packed=True
 )
 
@@ -126,7 +144,7 @@ btrfs_inode_item = Structure(
     (t.le64, 'rdev'),
     (t.le64, 'flags'),
     (t.le64, 'sequence'),
-    (t.le64, 'reserved', 4),
+    (t.le64, 'reserved', 4, t.readBuffer),
     (btrfs_timespec, 'atime'),
     (btrfs_timespec, 'ctime'),
     (btrfs_timespec, 'mtime'),
@@ -164,9 +182,9 @@ btrfs_root_item = Structure(
     (t.u8, 'drop_level'),
     (t.u8, 'level'),
     (t.le64, 'generation_v2'),
-    (t.u8, 'uuid', BTRFS_UUID_SIZE),
-    (t.u8, 'parent_uuid', BTRFS_UUID_SIZE),
-    (t.u8, 'received_uuid', BTRFS_UUID_SIZE),
+    (t.u8, 'uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),
+    (t.u8, 'parent_uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),
+    (t.u8, 'received_uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),
     (t.le64, 'ctransid'),
     (t.le64, 'otransid'),
     (t.le64, 'stransid'),
@@ -175,7 +193,7 @@ btrfs_root_item = Structure(
     (btrfs_timespec, 'otime'),
     (btrfs_timespec, 'stime'),
     (btrfs_timespec, 'rtime'),
-    (t.le64, 'reserved', 8),
+    (t.le64, 'reserved', 8, t.readBuffer),
     packed=True
 )
 
@@ -198,46 +216,57 @@ BTRFS_LAST_FREE_OBJECTID = (1 << 64) - 256
 BTRFS_FIRST_CHUNK_TREE_OBJECTID = 256
 
 
-def bytes2uuid(b):
-    """ Return standard human-friendly UUID. """
-    s = b.encode('hex')
-    return "%s-%s-%s-%s-%s" % (s[0:8], s[8:12], s[12:16], s[16:20], s[20:])
-
-
 class Volume(object):
 
     """ Represents a subvolume. """
 
     volumes = {}
 
-    def __init__(self, inodeItem, inodeRef, info):
+    def __init__(self, rootid, generation, info):
         """ Initialize. """
         # logger.debug("Volume %d: %s", id, pretty(info))
-        self.inode = inodeItem
-        self.ref = inodeRef
+        self.id = rootid  # id in BTRFS_ROOT_TREE_OBJECTID, also FS treeid for this volume
+        self.gen = generation
+        self.size = info.bytes_used
+        self.level = info.level
+        self.uuid = info.uuid
+        self.parent_uuid = info.parent_uuid
+        self.received_uuid = info.received_uuid
+
         self.info = info
-        self.trees = {}
-        self.uuid = bytes2uuid(info.uuid)
-        self.parent_uuid = bytes2uuid(info.parent_uuid)
-        self.received_uuid = bytes2uuid(info.received_uuid)
-        assert inodeItem not in Volume.volumes, inodeItem
-        Volume.volumes[inodeItem] = self
+
+        self.links = {}
+
+        assert rootid not in Volume.volumes, rootid
+        Volume.volumes[rootid] = self
+
         logger.debug("%s", self)
 
-    def _addLink(self, parentDir, info, name):
+    def _addLink(self, dirTree, dirID, dirSeq, dirPath, name):
         """ Add tree reference and name. (Hardlink). """
-        logger.debug("Link  %d '%s' %s", parentDir, name, pretty(info))
-        assert (parentDir, info.sequence) not in self.trees, parentDir
-        self.trees[(parentDir, info.sequence)] = (name, info)
-        assert len(self.trees) == 1, self.trees  # Cannot have multiple hardlinks to a directory
+        logger.debug("Link  %d-%d-%d '%s%s'", dirTree, dirID, dirSeq, dirPath, name)
+        assert (dirTree, dirID, dirSeq) not in self.links, (dirTree, dirID, dirSeq)
+        self.links[(dirTree, dirID, dirSeq)] = (dirPath, name)
+        assert len(self.links) == 1, self.links  # Cannot have multiple hardlinks to a directory
         logger.debug("%s", self)
+
+    @property
+    def fullPath(self):
+        """ Return full butter path from butter root. """
+        for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
+            return Volume.volumes[dirTree].fullPath + "/" + dirPath + name
+        return ""
 
     def __str__(self):
         """ String representation. """
-        return "'%s' %5d-%d %s\n          (parent %s received %s) " % (
-            ", ".join([name for (name, info) in self.trees.values()]),
-            self.inode,
-            self.ref,
+        # return pretty(self.__dict__)
+        return "%4d '%s' (level:%d gen:%d size:%d)\n\t%s (parent:%s received:%s)" % (
+            self.id,
+            # ", ".join([dirPath + name for (dirPath, name) in self.links.values()]),
+            self.fullPath,
+            self.level,
+            self.gen,
+            self.size,
             self.uuid,
             self.parent_uuid,
             self.received_uuid,
@@ -264,27 +293,43 @@ class Mount(ioctl.Device):
     def subvolumes(self):
         """ Subvolumes contained in this mount. """
         self._getTree()
-        return Volume.volumes
+        return Volume.volumes.values()
 
     def _getTree(self):
-        objectID = BTRFS_FIRST_FREE_OBJECTID
-        typeNum = BTRFS_ROOT_ITEM_KEY
-        offset = 0
+        Key = collections.namedtuple('Key', ('objectid', 'type', 'offset'))
+
+        key = Key(
+            objectid=0,
+            type=0,
+            # objectid=BTRFS_FIRST_FREE_OBJECTID,
+            # type=BTRFS_ROOT_ITEM_KEY,
+            offset=0,
+        )
+
+        endKey = Key(
+            objectid=BTRFS_LAST_FREE_OBJECTID,
+            type=BTRFS_ROOT_BACKREF_KEY,
+            offset=t.max_u64,
+        )
+
+        Key.next = (lambda key: Key(key.objectid, key.type, key.offset + 1))
+
+        self.IOC_SYNC()
 
         while True:
             # logger.debug("Min obj %d, offset %d", objectID, offset)
 
             # Returned objects seem to be monotonically increasing in (objectid, type, offset)
-            # min_type and max_type don't really work.
+            # min and max values are *not* filters.
             result = self.TREE_SEARCH(
                 key=dict(
                     tree_id=BTRFS_ROOT_TREE_OBJECTID,
-                    min_type=typeNum,  # This has no effect
-                    max_type=BTRFS_ROOT_BACKREF_KEY,  # This has no effect
-                    min_objectid=objectID,
-                    max_objectid=BTRFS_LAST_FREE_OBJECTID,
-                    min_offset=offset,  # This has no effect
-                    max_offset=t.max_u64,
+                    min_type=key.type,
+                    max_type=endKey.type,
+                    min_objectid=key.objectid,
+                    max_objectid=endKey.objectid,
+                    min_offset=key.offset,
+                    max_offset=endKey.offset,
                     min_transid=0,
                     max_transid=t.max_u64,
                     nr_items=4096,
@@ -299,42 +344,33 @@ class Mount(ioctl.Device):
             if results == 0:
                 break
 
-            stale = True
-
             for i in xrange(results):
                 assert buf.len >= btrfs_ioctl_search_header.size, buf.len
 
                 data = buf.read(btrfs_ioctl_search_header)
 
-                logger.debug("Object %d: %s", i, pretty(data))
+                # logger.debug("Object %d: %s", i, pretty(data))
 
                 assert buf.len >= data.len, (buf.len, data.len)
 
-                if stale:
-                    if (
-                        objectID >= data.objectid and
-                        typeNum >= data.type and
-                        offset >= data.offset
-                    ):
-                        logger.warn("Skipping stale object")
-                        buf.skip(data.len)
-                        continue
-
-                stale = False
-
                 # "key" values
-                objectID = data.objectid
-                typeNum = data.type
-                offset = data.offset
+                key = Key(data.objectid, data.type, data.offset)
 
                 if data.type == BTRFS_ROOT_BACKREF_KEY:
                     info = buf.read(btrfs_root_ref)
+
                     nS = Structure((t.char, 'name', data.len - btrfs_root_ref.size))
-                    nD = buf.read(nS)
-                    name = nD.name
-                    Volume.volumes[objectID]._addLink(
-                        offset,
-                        info,
+                    name = buf.read(nS).name
+
+                    directory = self.INO_LOOKUP(treeid=key.offset, objectid=info.dirid,)
+
+                    logger.debug("%s: %s %s", name, pretty(info), pretty(directory))
+
+                    Volume.volumes[key.objectid]._addLink(
+                        key.offset,
+                        info.dirid,
+                        info.sequence,
+                        directory.name,
                         name,
                     )
                 elif data.type == BTRFS_ROOT_ITEM_KEY:
@@ -346,15 +382,15 @@ class Mount(ioctl.Device):
                         assert False, data.len
 
                     Volume(
-                        objectID,
-                        offset,
+                        key.objectid,
+                        key.offset,
                         info,
                     )
                 else:
                     buf.skip(data.len)
                     continue
 
-            offset += 1
+            key = key.next()
 
     def _getDevInfo(self):
         return self.DEV_INFO(devid=1, uuid="")
@@ -362,42 +398,8 @@ class Mount(ioctl.Device):
     def _getFSInfo(self):
         return self.FS_INFO()
 
+    IOC_SYNC = Control.IO(8)
     TREE_SEARCH = Control.IOWR(17, btrfs_ioctl_search_args)
     INO_LOOKUP = Control.IOWR(18, btrfs_ioctl_ino_lookup_args)
     DEV_INFO = Control.IOWR(30, btrfs_ioctl_dev_info_args)
     FS_INFO = Control.IOR(31, btrfs_ioctl_fs_info_args)
-
-# BTRFS_IOC_SYNC = ioctl.IO(BTRFS_IOCTL_MAGIC, 8)
-# BTRFS_IOC_CLONE = ioctl.IOW(BTRFS_IOCTL_MAGIC, 9, ioctl.INT_SIZE)
-
-# define BTRFS_IOC_SET_RECEIVED_SUBVOL _IOWR(BTRFS_IOCTL_MAGIC, 37, \
-#                 struct btrfs_ioctl_received_subvol_args)
-
-
-#         ret = ioctl(fd, BTRFS_IOC_TREE_SEARCH, &args);
-
-# BTRFS_IOC_TREE_SEARCH = IOWR(BTRFS_IOCTL_MAGIC, 17, btrfs_ioctl_search_args)
-
-# define BTRFS_IOC_INO_LOOKUP _IOWR(BTRFS_IOCTL_MAGIC, 18, \
-#                    struct btrfs_ioctl_ino_lookup_args)
-# define BTRFS_IOC_SUBVOL_GETFLAGS _IOR(BTRFS_IOCTL_MAGIC, 25, t_u64)
-# define BTRFS_IOC_DEV_INFO _IOWR(BTRFS_IOCTL_MAGIC, 30, \
-#                  struct btrfs_ioctl_dev_info_args)
-# define BTRFS_IOC_FS_INFO _IOR(BTRFS_IOCTL_MAGIC, 31, \
-#                    struct btrfs_ioctl_fs_info_args)
-# define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
-#                     struct btrfs_ioctl_ino_path_args)
-
-# BTRFS_IOC_DEV_INFO = IOWR(BTRFS_IOCTL_MAGIC, 30, btrfs_ioctl_dev_info_args)
-# BTRFS_IOC_FS_INFO = IOR(BTRFS_IOCTL_MAGIC, 31, btrfs_ioctl_fs_info_args)
-
-
-# struct btrfs_ioctl_received_subvol_args {
-#     char    uuid[BTRFS_UUID_SIZE];  /* in */
-#     t_u64   stransid;       /* in */
-#     t_u64   rtransid;       /* out */
-#     struct btrfs_ioctl_timespec stime; /* in */
-#     struct btrfs_ioctl_timespec rtime; /* out */
-#     t_u64   flags;          /* in */
-#     t_u64   reserved[16];       /* in */
-# };

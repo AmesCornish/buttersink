@@ -56,7 +56,7 @@ def main():
         # dInfo['path'] = dInfo['path'].rstrip('\0')
         # pprint.pprint(dInfo)
 
-        for vol in mount.subvolumes.values():
+        for vol in mount.subvolumes:
                 print vol
 
     return 0
