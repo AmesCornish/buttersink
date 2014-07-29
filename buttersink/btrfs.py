@@ -94,8 +94,8 @@ btrfs_ioctl_dev_info_args = Structure(
     (t.u8, 'uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),     # /* in/out */
     (t.u64, 'bytes_used'),           # /* out */
     (t.u64, 'total_bytes'),          # /* out */
-    (t.u64, 'unused', 379),          # /* pad to 4k */
-    (t.u8, 'path', BTRFS_DEVICE_PATH_NAME_MAX),  # /* out */
+    (t.u64, 'unused', 379, t.readBuffer),          # /* pad to 4k */
+    (t.u8, 'path', BTRFS_DEVICE_PATH_NAME_MAX, t.readString, t.writeString),  # /* out */
     packed=True
 )
 
@@ -293,7 +293,9 @@ class Mount(ioctl.Device):
     def subvolumes(self):
         """ Subvolumes contained in this mount. """
         self._getTree()
-        return Volume.volumes.values()
+        volumes = Volume.volumes.values()
+        volumes.sort(key=(lambda v: v.fullPath))
+        return volumes
 
     def _getTree(self):
         Key = collections.namedtuple('Key', ('objectid', 'type', 'offset'))
@@ -403,3 +405,19 @@ class Mount(ioctl.Device):
     INO_LOOKUP = Control.IOWR(18, btrfs_ioctl_ino_lookup_args)
     DEV_INFO = Control.IOWR(30, btrfs_ioctl_dev_info_args)
     FS_INFO = Control.IOR(31, btrfs_ioctl_fs_info_args)
+
+# #define BTRFS_IOC_DEFAULT_SUBVOL _IOW(BTRFS_IOCTL_MAGIC, 19, __u64)
+# #define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
+#                     struct btrfs_ioctl_ino_path_args)
+# #define BTRFS_IOC_LOGICAL_INO _IOWR(BTRFS_IOCTL_MAGIC, 36, \
+#                     struct btrfs_ioctl_ino_path_args)
+# #define BTRFS_IOC_SET_RECEIVED_SUBVOL _IOWR(BTRFS_IOCTL_MAGIC, 37, \
+#                 struct btrfs_ioctl_received_subvol_args)
+# #define BTRFS_IOC_SEND _IOW(BTRFS_IOCTL_MAGIC, 38, struct btrfs_ioctl_send_args)
+# #define BTRFS_IOC_QUOTA_RESCAN _IOW(BTRFS_IOCTL_MAGIC, 44, \
+#                    struct btrfs_ioctl_quota_rescan_args)
+# #define BTRFS_IOC_QUOTA_RESCAN_STATUS _IOR(BTRFS_IOCTL_MAGIC, 45, \
+#                    struct btrfs_ioctl_quota_rescan_args)
+# #define BTRFS_IOC_QUOTA_RESCAN_WAIT _IO(BTRFS_IOCTL_MAGIC, 46)
+# #define BTRFS_IOC_QUOTA_CTL _IOWR(BTRFS_IOCTL_MAGIC, 40, \
+#                    struct btrfs_ioctl_quota_ctl_args)
