@@ -46,7 +46,7 @@ def main():
     """ Main program. """
     args = command.parse_args()
         
-    with btrfs.Mount(args.dir) as mount:
+    with btrfs.FileSystem(args.dir) as mount:
         fInfo = mount.FS_INFO()
         pprint.pprint(fInfo)
 

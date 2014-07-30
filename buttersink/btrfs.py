@@ -227,6 +227,7 @@ class Volume(object):
     """ Represents a subvolume. """
 
     volumes = {}
+    mounts = {}
 
     def __init__(self, rootid, generation, info):
         """ Initialize. """
@@ -262,15 +263,25 @@ class Volume(object):
     def fullPath(self):
         """ Return full butter path from butter root. """
         for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
-            return Volume.volumes[dirTree].fullPath + "/" + dirPath + name
-        return ""
+            path = Volume.volumes[dirTree].fullPath
+            return path + ("/" if path[-1] != "/" else "") + dirPath + name
+        return "/"
+
+    @property
+    def linuxPaths(self):
+        """ Return full paths from linux root. """
+        if self.fullPath in Volume.mounts:
+            yield Volume.mounts[self.fullPath]
+        for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
+            for path in Volume.volumes[dirTree].linuxPaths:
+                yield path + "/" + dirPath + name
 
     def __str__(self):
         """ String representation. """
         # logger.debug("%d %d %d", self.gen, self.info.generation, self.info.inode.generation)
         # logger.debug("%o %o", self.info.flags, self.info.inode.flags)
         # return pretty(self.__dict__)
-        return "%4d '%s' (level:%d gen:%d size:%d%s)\n\t%s (parent:%s received:%s)" % (
+        return "%4d '%s' (level:%d gen:%d size:%d%s)\n\t%s (parent:%s received:%s)\n\t%s" % (
             self.id,
             # ", ".join([dirPath + name for (dirPath, name) in self.links.values()]),
             self.fullPath,
@@ -281,6 +292,7 @@ class Volume(object):
             self.uuid,
             self.parent_uuid,
             self.received_uuid,
+            "\n\t".join(self.linuxPaths),
         )
 
 
@@ -291,22 +303,45 @@ class Control(ioctl.Control):
     magic = BTRFS_IOCTL_MAGIC
 
 
-class Mount(ioctl.Device):
+class FileSystem(ioctl.Device):
 
     """ Mounted file system descriptor for ioctl actions. """
 
     def __init__(self, path):
         """ Initialize. """
-        super(Mount, self).__init__(path)
+        super(FileSystem, self).__init__(path)
         self.volumes = None
+        self.mounts = None
 
     @property
     def subvolumes(self):
         """ Subvolumes contained in this mount. """
         self._getTree()
+        self._getMounts()
         volumes = Volume.volumes.values()
         volumes.sort(key=(lambda v: v.fullPath))
         return volumes
+
+    def _getMounts(self):
+        Volume.mounts = {}
+        defaultSubvol = self.DEFAULT_SUBVOL().id
+        if defaultSubvol == 0:
+            defaultSubvol = ""
+        else:
+            defaultSubvol = Volume.volumes[defaultSubvol].fullPath.rstrip("/")
+        with open("/etc/mtab") as mtab:
+            for line in mtab:
+                (dev, path, fs, opts, freq, passNum) = line.split()
+                if fs != "btrfs":
+                    continue
+                opts = {
+                    opt: value
+                    for (opt, _, value) in
+                    [o.partition("=") for o in opts.split(",")]
+                }
+                subvol = "/" + opts.get('subvol', defaultSubvol)
+                Volume.mounts[subvol] = path
+                logger.debug("%s: %s", subvol, path)
 
     def _getTree(self):
         Key = collections.namedtuple('Key', ('objectid', 'type', 'offset'))
@@ -413,9 +448,14 @@ class Mount(ioctl.Device):
     def _getFSInfo(self):
         return self.FS_INFO()
 
+    volid_struct = Structure(
+        (t.u64, 'id')
+        )
+
     SYNC = Control.IO(8)
     TREE_SEARCH = Control.IOWR(17, btrfs_ioctl_search_args)
     INO_LOOKUP = Control.IOWR(18, btrfs_ioctl_ino_lookup_args)
+    DEFAULT_SUBVOL = Control.IOW(19, volid_struct)
     DEV_INFO = Control.IOWR(30, btrfs_ioctl_dev_info_args)
     FS_INFO = Control.IOR(31, btrfs_ioctl_fs_info_args)
 

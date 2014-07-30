@@ -10,7 +10,6 @@ import btrfs
 import Butter
 import Store
 
-import collections
 import datetime
 import logging
 import math
@@ -18,7 +17,7 @@ import os
 import os.path
 
 logger = logging.getLogger(__name__)
-logger.setLevel('DEBUG')
+# logger.setLevel('DEBUG')
 theMinimumChangeRate = .00001
 
 
@@ -68,8 +67,9 @@ class ButterStore(Store.Store):
 
         self.isDest = isDest
         self.path = os.path.abspath(path)
+        logger.debug("%s", self.path)
         self.butter = Butter.Butter(self.path)  # subprocess command-line interface
-        self.btrfs = btrfs.Mount(self.path)     # ioctl interface
+        self.btrfs = btrfs.FileSystem(self.path)     # ioctl interface
 
         # self.volumes = self.butter.listVolumes()
         self._fillVolumesAndPaths()
@@ -84,8 +84,11 @@ class ButterStore(Store.Store):
                 uuid = bv.ruuid if self.isDest else bv.uuid
                 vol = Store.Volume(uuid, None, None, bv.current_gen)
                 # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
-                logger.debug("%s %s", vol, bv.fullPath)
-                self.paths[vol].add(bv.fullPath)
+                for path in bv.linuxPaths:
+                    if path.startswith(self.path):
+                        path = path[len(self.path)+1:]
+                    logger.debug("%s %s", vol, path)
+                    self.paths[vol].add(path)
 
     def __unicode__(self):
         """ English description of self. """
