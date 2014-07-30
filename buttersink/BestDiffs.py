@@ -134,7 +134,7 @@ class BestDiffs:
                         sink
                     )
 
-                    for edge in sink.iterEdges(fromUUID):
+                    for edge in sink.getEdges(fromUUID):
                         toUUID = edge['to']
 
                         # Skip any edges already in the destination

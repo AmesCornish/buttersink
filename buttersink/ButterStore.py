@@ -1,34 +1,91 @@
 """ Manage read-only volumes in local btrfs file system.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+
 """
 
 from __future__ import division
 
+import btrfs
 import Butter
 import Store
 
-import math
+import collections
+import datetime
 import logging
-logger = logging.getLogger(__name__)
-# logger.setLevel('DEBUG')
+import math
+import os
+import os.path
 
+logger = logging.getLogger(__name__)
+logger.setLevel('DEBUG')
 theMinimumChangeRate = .00001
+
+
+class _Writer:
+
+    """ Context Manager to write a snapshot. """
+
+    def __init__(self, stream, volume, path):
+        self.stream = stream
+        self.volume = volume
+        self.path = path
+
+    def __enter__(self):
+        return self.stream.__enter__()
+
+    def __exit__(self, exceptionType, exception, trace):
+        self.stream.__exit__(exceptionType, exception, trace)
+
+        if exception is None:
+            with open(self.path + ".bs") as stream:
+                self.volume.writeInfo(stream)
+            return
+
+        if not os.path.exists(self.path):
+            return
+
+        partial = self.path + ".part"
+
+        if os.path.exists(partial):
+            partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
+
+        os.rename(self.path, partial)
 
 
 class ButterStore(Store.Store):
 
     """ A local btrfs synchronization source or sink. """
 
-    def __init__(self, host, path):
+    def __init__(self, host, path, isDest):
         """ Initialize.
 
         host is ignored.
         path is the file system location of the read-only subvolumes.
+
         """
-        self.path = path
-        self.butter = Butter.Butter(path)
-        self.volumes = self.butter.listVolumes()
+        super(ButterStore, self).__init__()
+
+        self.isDest = isDest
+        self.path = os.path.abspath(path)
+        self.butter = Butter.Butter(self.path)  # subprocess command-line interface
+        self.btrfs = btrfs.Mount(self.path)     # ioctl interface
+
+        # self.volumes = self.butter.listVolumes()
+        self._fillVolumesAndPaths()
+
+    def _fillVolumesAndPaths(self):
+        """ Fill in self.paths. """
+        # import pudb; pudb.set_trace()
+        with self.btrfs as mount:
+            for bv in mount.subvolumes:
+                if not bv.readOnly:
+                    continue
+                uuid = bv.ruuid if self.isDest else bv.uuid
+                vol = Store.Volume(uuid, None, None, bv.current_gen)
+                # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
+                logger.debug("%s %s", vol, bv.fullPath)
+                self.paths[vol].add(bv.fullPath)
 
     def __unicode__(self):
         """ English description of self. """
@@ -38,18 +95,11 @@ class ButterStore(Store.Store):
         """ English description of self. """
         return unicode(self).encode('utf-8')
 
-    def listVolumes(self):
-        """ Return list of volumes that are available. """
-        return [vol for vol in self.volumes.values() if not vol['extra']]
-
-    def getVolume(self, uuid):
-        """ Return dict of info for a specific volume. """
-        return self.volumes[uuid]
-
-    def iterEdges(self, fromVol):
+    def getEdges(self, fromVol):
         """ Return the edges available from fromVol.
 
         Returned edge is a dict: 'to' UUID, estimated 'size' in bytes
+
         """
         if fromVol is None:
             for toVol in self.volumes.values():
@@ -82,9 +132,13 @@ class ButterStore(Store.Store):
         """ Store already contains this edge. """
         return toUUID in self.volumes and fromUUID in self.volumes
 
-    def receive(self, toUUID, fromUUID, path):
+    def _fullPath(self, path):
+        return os.path.normpath(os.path.join(os.path.dirname(self.path), path))
+
+    def receive(self, toUUID, fromUUID, volume, path):
         """ Return a file-like (stream) object to store a diff. """
-        return self.butter.receive(path)
+        logger.debug("Receiving '%s'", path)
+        return _Writer(self.butter.receive(), volume, self._fullPath(path))
 
     def _estimateSize(self, toVol, fromVol, changeRate):
         fromGen = fromVol['gen']

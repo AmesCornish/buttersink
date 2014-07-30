@@ -1,11 +1,11 @@
 """ Interface to btrfs-tools for snapshots.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+
 """
 
 if True:  # Headers
     if True:  # imports
-        import datetime
         import os
         import os.path
         import psutil
@@ -24,34 +24,6 @@ if True:  # Headers
 # logger.setLevel('DEBUG')
 
 
-class _Reader:
-
-    """ Context Manager to write a snapshot. """
-
-    def __init__(self, stream, path):
-        self.stream = stream
-        self.path = path
-
-    def __enter__(self):
-        return self.stream.__enter__()
-
-    def __exit__(self, exceptionType, exception, trace):
-        self.stream.__exit__(exceptionType, exception, trace)
-
-        if exception is None:
-            return
-
-        if not os.path.exists(self.path):
-            return
-
-        partial = self.path + ".part"
-
-        if os.path.exists(partial):
-            partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
-
-        os.rename(self.path, partial)
-
-
 class Butter:
 
     """ Interface to local btrfs file system snapshots. """
@@ -60,6 +32,7 @@ class Butter:
         """ Initialize.
 
         path indicates the btrfs volume, and also the directory containing snapshots.
+
         """
         self.btrfsVersion = self._getVersion([3, 14])
 
@@ -199,15 +172,14 @@ class Butter:
 
         return vols
 
-    def receive(self, path):
+    def receive(self):
         """ Return a file-like (stream) object to store a diff. """
-        logger.debug("Receiving '%s'", path)
         cmd = ["btrfs", "receive", self.userPath]
         self._fileSystemSync()
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr, stdout=DEVNULL)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
-        return _Reader(process.stdin, self._relative2LinuxPath(path))
+        return process.stdin
 
     def _getPath(self, uuid):
         path = self.volumes[uuid]['path']
@@ -231,9 +203,6 @@ class Butter:
 
     def _butter2LinuxPath(self, path):
         raise NotImplementedError
-
-    def _relative2LinuxPath(self, path):
-        return os.path.normpath(os.path.join(os.path.dirname(self.userPath), path))
 
     def send(self, uuid, parent, streamContext, progress=True):
         """ Write a (incremental) snapshot to the stream context manager. """

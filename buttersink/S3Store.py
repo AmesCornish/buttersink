@@ -1,6 +1,7 @@
 """ Back-end for AWS S3.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+
 """
 
 # Docs: http://boto.readthedocs.org/en/latest/
@@ -12,6 +13,7 @@ if True:  # Imports and constants
         import Store
 
         import boto
+        import collections
         import datetime
         import io
         import logging
@@ -37,12 +39,17 @@ class S3Store(Store.Store):
 
     """ An S3 bucket synchronization source or sink. """
 
-    def __init__(self, host, path):
+    def __init__(self, host, path, isDest):
         """ Initialize.
 
         host is the bucket name.
         path is an object key prefix to use.
+
         """
+        super(S3Store, self).__init__()
+
+        self.isDest = isDest
+
         self.bucketName = host
 
         if path:
@@ -55,11 +62,8 @@ class S3Store(Store.Store):
 
         self.keyPattern = re.compile(S3Store.theKeyPattern % ())
 
-        # List of dict with from, to, size, path
+        # { fromVol: [diff] }
         self.diffs = None
-
-        # { uuid: { path, uuid, } }
-        self.vols = None
 
         logger.info("Listing %s contents...", self)
 
@@ -70,7 +74,7 @@ class S3Store(Store.Store):
             raise
 
         self.bucket = s3.get_bucket(self.bucketName)
-        self._listBucket()
+        self._fillVolumesAndPaths()
 
     def __unicode__(self):
         """ Return text description. """
@@ -80,76 +84,51 @@ class S3Store(Store.Store):
         """ Return text description. """
         return unicode(self).encode('utf-8')
 
-    def _listBucket(self):
-        self.vols = {}
-        self.diffs = []
+    def _fillVolumesAndPaths(self):
+        """ Fill in self.paths. """
+        self.diffs = collections.defaultdict((lambda: []))
 
         for key in self.bucket.list():
-            diff = self._parseKeyName(key.name)
+            keyInfo = self._parseKeyName(key.name)
 
-            if diff is None:
-                logger.info("Ignoring '%s' in S3", key.name)
+            if keyInfo is None:
+                if key.name[-1:] != '/':
+                    logger.warn("Ignoring '%s' in S3", key.name)
                 continue
 
-            if diff['from'] == 'None':
-                diff['from'] = None
+            if keyInfo['from'] == 'None':
+                keyInfo['from'] = None
 
-            extra = not diff['fullpath'].startswith(self.prefix.rstrip("/"))
-
-            if not extra:
-                diff['path'] = diff['fullpath'][len(self.prefix):]
+            if keyInfo['fullpath'].startswith(self.prefix.rstrip("/")):
+                path = keyInfo['fullpath'][len(self.prefix):]
+                assert not path or path[0] != '/', path  # Indicates relative path
             else:
-                diff['path'] = diff['fullpath']
+                path = "/" + keyInfo['fullpath']
+                assert path[0] == '/', path  # Indicates absolute path
 
-            if not diff['path']:
-                diff['path'] = "."
+            if not path:
+                path = "."
 
-            self.vols[diff['to']] = {
-                'uuid': diff['to'],
-                'path': diff['path'],
-                'fullpath': diff['fullpath'],
-                'extra': extra,
-                'exclusiveSize': key.size,
-            }
+            diff = Store.Diff(self, keyInfo['to'], keyInfo['from'], key.size)
 
-            self.diffs.append({
-                'from': diff['from'],
-                'to': diff['to'],
-                'size': key.size,
-                'path': diff['path']
-            })
+            self.diffs[diff.fromVol].append(diff)
+            self.paths[diff.toVol].add(path)
 
         logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
         # logger.debug("Vols:\n%s", pprint.pformat(self.vols))
 
-    def listVolumes(self):
-        """ Return list of volumes that are available. """
-        return [vol for vol in self.vols.values() if not vol['extra']]
+    def getEdges(self, fromVol):
+        """ Return the edges available from fromVol. """
+        return self.diffs[fromVol]
 
-    def getVolume(self, uuid):
-        """ Return info about volume. """
-        return self.vols[uuid]
-
-    def iterEdges(self, fromVol):
-        """ Return the edges available from fromVol.
-
-        Returned edge is a dict: 'to' UUID, estimated 'size' in bytes
-        """
-        for diff in self.diffs:
-            if diff['from'] == fromVol:
-                yield {'to': diff['to'], 'size': diff['size']}
-
-    def hasEdge(self, toUUID, fromUUID):
+    def hasEdge(self, diff):
         """ Test whether edge is in this sink. """
-        for diff in self.diffs:
-            if diff['from'] == fromUUID and diff['to'] == toUUID:
-                return True
-        return False
+        return diff.toVol in [d.toVol for d in self.diffs[diff.fromVol]]
 
-    def receive(self, toUUID, fromUUID, path):
+    def receive(self, toUUID, fromUUID, volume, path):
         """ Return a file-like (stream) object to store a diff. """
         path = os.path.normpath(os.path.join(self.prefix, path))
-        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID, path))
+        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID, path), volume)
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
@@ -157,6 +136,7 @@ class S3Store(Store.Store):
         return "%s/%s_%s" % (path, toUUID, fromUUID)
 
     def _parseKeyName(self, name):
+        """ Returns dict with fullpath, to, from. """
         match = self.keyPattern.match(name)
         return match.groupdict() if match else None
 

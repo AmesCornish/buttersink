@@ -215,6 +215,12 @@ BTRFS_FIRST_FREE_OBJECTID = 256
 BTRFS_LAST_FREE_OBJECTID = (1 << 64) - 256
 BTRFS_FIRST_CHUNK_TREE_OBJECTID = 256
 
+BTRFS_ROOT_SUBVOL_RDONLY = (1 << 0)
+
+BTRFS_ROOT_TREE_OBJECTID = 1
+BTRFS_FS_TREE_OBJECTID = 5
+BTRFS_QUOTA_TREE_OBJECTID = 8
+
 
 class Volume(object):
 
@@ -226,8 +232,10 @@ class Volume(object):
         """ Initialize. """
         # logger.debug("Volume %d: %s", id, pretty(info))
         self.id = rootid  # id in BTRFS_ROOT_TREE_OBJECTID, also FS treeid for this volume
-        self.gen = generation
+        self.original_gen = generation
+        self.current_gen = info.generation
         self.size = info.bytes_used
+        self.readOnly = bool(info.flags & BTRFS_ROOT_SUBVOL_RDONLY)
         self.level = info.level
         self.uuid = info.uuid
         self.parent_uuid = info.parent_uuid
@@ -259,14 +267,17 @@ class Volume(object):
 
     def __str__(self):
         """ String representation. """
+        # logger.debug("%d %d %d", self.gen, self.info.generation, self.info.inode.generation)
+        # logger.debug("%o %o", self.info.flags, self.info.inode.flags)
         # return pretty(self.__dict__)
-        return "%4d '%s' (level:%d gen:%d size:%d)\n\t%s (parent:%s received:%s)" % (
+        return "%4d '%s' (level:%d gen:%d size:%d%s)\n\t%s (parent:%s received:%s)" % (
             self.id,
             # ", ".join([dirPath + name for (dirPath, name) in self.links.values()]),
             self.fullPath,
             self.level,
-            self.gen,
+            self.current_gen,
             self.size,
+            " ro" if self.readOnly else "",
             self.uuid,
             self.parent_uuid,
             self.received_uuid,
@@ -316,7 +327,7 @@ class Mount(ioctl.Device):
 
         Key.next = (lambda key: Key(key.objectid, key.type, key.offset + 1))
 
-        self.IOC_SYNC()
+        self.SYNC()
 
         while True:
             # logger.debug("Min obj %d, offset %d", objectID, offset)
@@ -383,11 +394,13 @@ class Mount(ioctl.Device):
                     else:
                         assert False, data.len
 
-                    Volume(
-                        key.objectid,
-                        key.offset,
-                        info,
-                    )
+                    if (key.objectid >= BTRFS_FIRST_FREE_OBJECTID or
+                            key.objectid == BTRFS_FS_TREE_OBJECTID):
+                        Volume(
+                            key.objectid,
+                            key.offset,
+                            info,
+                        )
                 else:
                     buf.skip(data.len)
                     continue
@@ -400,24 +413,24 @@ class Mount(ioctl.Device):
     def _getFSInfo(self):
         return self.FS_INFO()
 
-    IOC_SYNC = Control.IO(8)
+    SYNC = Control.IO(8)
     TREE_SEARCH = Control.IOWR(17, btrfs_ioctl_search_args)
     INO_LOOKUP = Control.IOWR(18, btrfs_ioctl_ino_lookup_args)
     DEV_INFO = Control.IOWR(30, btrfs_ioctl_dev_info_args)
     FS_INFO = Control.IOR(31, btrfs_ioctl_fs_info_args)
 
-# #define BTRFS_IOC_DEFAULT_SUBVOL _IOW(BTRFS_IOCTL_MAGIC, 19, __u64)
-# #define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
+# define BTRFS_IOC_DEFAULT_SUBVOL _IOW(BTRFS_IOCTL_MAGIC, 19, __u64)
+# define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
 #                     struct btrfs_ioctl_ino_path_args)
-# #define BTRFS_IOC_LOGICAL_INO _IOWR(BTRFS_IOCTL_MAGIC, 36, \
+# define BTRFS_IOC_LOGICAL_INO _IOWR(BTRFS_IOCTL_MAGIC, 36, \
 #                     struct btrfs_ioctl_ino_path_args)
-# #define BTRFS_IOC_SET_RECEIVED_SUBVOL _IOWR(BTRFS_IOCTL_MAGIC, 37, \
+# define BTRFS_IOC_SET_RECEIVED_SUBVOL _IOWR(BTRFS_IOCTL_MAGIC, 37, \
 #                 struct btrfs_ioctl_received_subvol_args)
-# #define BTRFS_IOC_SEND _IOW(BTRFS_IOCTL_MAGIC, 38, struct btrfs_ioctl_send_args)
-# #define BTRFS_IOC_QUOTA_RESCAN _IOW(BTRFS_IOCTL_MAGIC, 44, \
+# define BTRFS_IOC_SEND _IOW(BTRFS_IOCTL_MAGIC, 38, struct btrfs_ioctl_send_args)
+# define BTRFS_IOC_QUOTA_RESCAN _IOW(BTRFS_IOCTL_MAGIC, 44, \
 #                    struct btrfs_ioctl_quota_rescan_args)
-# #define BTRFS_IOC_QUOTA_RESCAN_STATUS _IOR(BTRFS_IOCTL_MAGIC, 45, \
+# define BTRFS_IOC_QUOTA_RESCAN_STATUS _IOR(BTRFS_IOCTL_MAGIC, 45, \
 #                    struct btrfs_ioctl_quota_rescan_args)
-# #define BTRFS_IOC_QUOTA_RESCAN_WAIT _IO(BTRFS_IOCTL_MAGIC, 46)
-# #define BTRFS_IOC_QUOTA_CTL _IOWR(BTRFS_IOCTL_MAGIC, 40, \
+# define BTRFS_IOC_QUOTA_RESCAN_WAIT _IO(BTRFS_IOCTL_MAGIC, 46)
+# define BTRFS_IOC_QUOTA_CTL _IOWR(BTRFS_IOCTL_MAGIC, 40, \
 #                    struct btrfs_ioctl_quota_ctl_args)

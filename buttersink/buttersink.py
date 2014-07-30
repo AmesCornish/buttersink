@@ -19,38 +19,10 @@ if True:  # Headers
         import Store
 
 theVersion = '0.2+'
-theDebug = False
+theDebug = True
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
-
-
-def _setupLogging(quietLevel, logFile):
-    theDisplayFormat = '%(message)s'
-    theDebugDisplayFormat = (
-        '%(levelname)7s:'
-        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
-        )
-    theLogFormat = (
-        '%(asctime)-15s: %(levelname)7s:'
-        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
-        )
-
-    root = logging.getLogger()
-    root.setLevel("INFO" if theDebug else "DEBUG")  # When debugging, this is handled per-logger
-
-    def add(handler, level, format):
-        handler.setLevel(level)
-        handler.setFormatter(logging.Formatter(format))
-        root.addHandler(handler)
-
-    level = "DEBUG" if theDebug else "INFO" if quietLevel < 2 else "WARN"
-    formatString = theDebugDisplayFormat if theDebug else theDisplayFormat
-
-    add(logging.StreamHandler(sys.stdout), level, formatString)
-
-    if logFile is not None:
-        add(logging.StreamHandler(logFile), "DEBUG", theLogFormat)
 
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
@@ -102,21 +74,53 @@ command.add_argument('--remote-list', action="store_true",
                      )
 
 
-def parseSink(uri):
+def _setupLogging(quietLevel, logFile):
+    theDisplayFormat = '%(message)s'
+    theDebugDisplayFormat = (
+        '%(levelname)7s:'
+        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+        )
+    theLogFormat = (
+        '%(asctime)-15s: %(levelname)7s:'
+        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+        )
+
+    root = logging.getLogger()
+    root.setLevel("INFO" if theDebug else "DEBUG")  # When debugging, this is handled per-logger
+
+    def add(handler, level, format):
+        handler.setLevel(level)
+        handler.setFormatter(logging.Formatter(format))
+        root.addHandler(handler)
+
+    level = "DEBUG" if theDebug else "INFO" if quietLevel < 2 else "WARN"
+    formatString = theDebugDisplayFormat if theDebug else theDisplayFormat
+
+    add(logging.StreamHandler(sys.stdout), level, formatString)
+
+    if logFile is not None:
+        add(logging.StreamHandler(logFile), "DEBUG", theLogFormat)
+
+
+def parseSink(uri, isDest):
     """ Parse command-line description of sink into a sink object. """
     if uri is None:
         return None
 
     # logger.debug(uri)
-    pattern = re.compile('^(?P<method>[^:/]*)://(?P<host>[^/]*)(/(?P<path>.*))?$')
+    pattern = re.compile('^((?P<method>[^:/]*)://)?(?P<host>[^/]*)(/(?P<path>.*))?$')
     match = pattern.match(uri)
     if match is None:
         # logger.error("Can't parse snapshot store '%s'", uri)
         raise Exception("Can't parse snapshot store '%s'" % (uri))
     parts = match.groupdict()
 
+    if parts['method'] is None:
+        parts['method'] = 'file'
+
     if parts['method'] == 'file':
         parts['path'] = parts['host'] + '/' + parts['path']
+
     logger.debug(parts)
 
     Sinks = {
@@ -125,7 +129,7 @@ def parseSink(uri):
         # 'ssh': SSHStore.SSHStore,
     }
 
-    return Sinks[parts['method']](parts['host'], parts['path'])
+    return Sinks[parts['method']](parts['host'], parts['path'], isDest)
 
 
 def main():
@@ -138,18 +142,19 @@ def main():
 
     progress = args.quiet == 0
 
-    source = parseSink(args.source)
+    source = parseSink(args.source, False)
 
-    dest = parseSink(args.dest)
+    dest = parseSink(args.dest, source is not None)
 
     if source is None:
         for vol in dest.listVolumes():
-            print(Store.printVolume(vol))
+            for path in dest.getPaths(vol):
+                print "%s %s" % (vol, path)
         return 0
 
     vols = source.listVolumes()
 
-    best = BestDiffs.BestDiffs([vol['uuid'] for vol in vols], args.delete)
+    best = BestDiffs.BestDiffs(vols, args.delete)
     best.analyze(source, dest)
 
     summary = best.summary()
@@ -159,21 +164,23 @@ def main():
         logger.info("%s from %s", Store.humanize(size), sink)
 
     for diff in best.iterDiffs():
-        logger.info("%s: %s", "Keep" if diff.diffSink == dest else "Xfer", diff)
+        logger.info("%s: %s", "Keep" if diff.sink == dest else "Xfer", diff)
 
-        if diff.diffSink == dest:
+        if diff.sink == dest:
             continue
 
         if args.dry_run:
             continue
 
-        volume = diff.diffSink.getVolume(diff.uuid)
+        vol = diff.toVol
+        paths = diff.sink.getPaths(vol)
 
-        streamContext = dest.receive(diff.uuid, diff.previous, volume['path'])
+        streamContext = dest.receive(diff, paths)
 
-        diff.diffSink.send(diff.uuid, diff.previous, streamContext, progress=progress)
+        diff.sink.send(diff, streamContext, progress=progress)
 
-        dest.updateVolumeInfo(volume)
+        infoContext = dest.receiveVolumeInfo(vol, paths)
+        vol.writeInfo(infoContext)
 
     return 0
 
