@@ -70,9 +70,13 @@ class ButterStore(Store.Store):
         logger.debug("%s", self.path)
         self.butter = Butter.Butter(self.path)  # subprocess command-line interface
         self.btrfs = btrfs.FileSystem(self.path)     # ioctl interface
-
+        self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
         # self.volumes = self.butter.listVolumes()
         self._fillVolumesAndPaths()
+
+    def _btrfsVol2StoreVol(self, bvol):
+        uuid = bvol.received_uuid if self.isDest else bvol.uuid
+        return Store.Volume(uuid, bvol.totalSize, bvol.exclusiveSize, bvol.current_gen)
 
     def _fillVolumesAndPaths(self):
         """ Fill in self.paths. """
@@ -81,8 +85,15 @@ class ButterStore(Store.Store):
             for bv in mount.subvolumes:
                 if not bv.readOnly:
                     continue
-                uuid = bv.ruuid if self.isDest else bv.uuid
-                vol = Store.Volume(uuid, None, None, bv.current_gen)
+
+                vol = self._btrfsVol2StoreVol(bv)
+                if vol.uuid is None:
+                    continue
+
+                if vol.uuid in self.butterVolumes:
+                    logger.warn("Duplicate effective uuid")
+                self.butterVolumes[vol.uuid] = bv
+
                 # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
                 for path in bv.linuxPaths:
                     if path.startswith(self.path):
@@ -99,37 +110,35 @@ class ButterStore(Store.Store):
         return unicode(self).encode('utf-8')
 
     def getEdges(self, fromVol):
-        """ Return the edges available from fromVol.
-
-        Returned edge is a dict: 'to' UUID, estimated 'size' in bytes
-
-        """
+        """ Return the edges available from fromVol. """
         if fromVol is None:
-            for toVol in self.volumes.values():
-                yield {'to': toVol['uuid'], 'size': toVol['totalSize']}
+            for toVol in self.paths:
+                yield Store.Diff(self, toVol, fromVol, toVol.size)
             return
 
-        if fromVol not in self.volumes:
+        if fromVol not in self.paths:
             return
 
-        fromVol = self.volumes[fromVol]
-        fromParent = fromVol['parent']
+        fromBVol = self.butterVolumes[fromVol.uuid]
+        parentUUID = fromBVol.parent_uuid
 
-        vols = [toVol for toVol in self.volumes.values()
-                if toVol['parent'] == fromParent
+        vols = [vol for vol in self.butterVolumes.values()
+                if vol.parent_uuid == parentUUID
                 ]
 
         changeRate = self._calcChangeRate(vols)
 
-        for toVol in vols:
-            if toVol == fromVol:
+        for toBVol in vols:
+            if toBVol == fromVol:
                 continue
 
             # This gives a conservative estimate of the size of the diff
 
-            estimatedSize = self._estimateSize(toVol, fromVol, changeRate)
+            estimatedSize = self._estimateSize(toBVol, fromBVol, changeRate)
 
-            yield {'to': toVol['uuid'], 'size': estimatedSize}
+            toVol = self._btrfsVol2StoreVol(toBVol)
+
+            yield Store.Diff(self, toVol, fromVol, estimatedSize, True)
 
     def hasEdge(self, toUUID, fromUUID):
         """ Store already contains this edge. """
