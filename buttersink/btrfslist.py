@@ -11,7 +11,6 @@ if True:  # imports
 
     import argparse
     import logging
-    import os
     import pprint
     import sys
 
@@ -24,7 +23,7 @@ theDebugDisplayFormat = (
     '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
     )
 
-logging.basicConfig(format=theDebugDisplayFormat)
+logging.basicConfig(format=theDebugDisplayFormat, level='INFO')
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
@@ -47,6 +46,8 @@ def main():
     args = command.parse_args()
         
     with btrfs.FileSystem(args.dir) as mount:
+        mount.rescanSizes()
+
         fInfo = mount.FS_INFO()
         pprint.pprint(fInfo)
 

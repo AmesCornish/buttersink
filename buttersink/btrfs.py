@@ -237,6 +237,23 @@ btrfs_qgroup_limit_item = Structure(
     packed=True
 )
 
+BTRFS_QUOTA_CTL_ENABLE = 1
+BTRFS_QUOTA_CTL_DISABLE = 2
+BTRFS_QUOTA_CTL_RESCAN__NOTUSED = 3
+
+btrfs_ioctl_quota_ctl_args = Structure(
+    (t.u64, 'cmd'),
+    (t.u64, 'status'),
+    packed=True
+)
+
+btrfs_ioctl_quota_rescan_args = Structure(
+    (t.u64, 'flags'),
+    (t.u64, 'progress'),
+    (t.u64, 'reserved', 6, t.readBuffer),
+    packed=True
+)
+
 BTRFS_IOCTL_MAGIC = 0x94
 
 objectTypeKeys = {
@@ -402,6 +419,13 @@ class FileSystem(ioctl.Device):
         volumes.sort(key=(lambda v: v.fullPath))
         return volumes
 
+    def rescanSizes(self):
+        """ Zero and recalculate quota sizes to subvolume sizes will be correct. """
+        self.QUOTA_CTL(cmd=BTRFS_QUOTA_CTL_ENABLE)
+        self.QUOTA_RESCAN()
+        logger.info("Waiting for btrfs rescan...")
+        self.QUOTA_RESCAN_WAIT()
+
     def _getMounts(self):
         Volume.mounts = {}
         defaultSubvol = self.DEFAULT_SUBVOL().id
@@ -558,6 +582,9 @@ class FileSystem(ioctl.Device):
     DEFAULT_SUBVOL = Control.IOW(19, volid_struct)
     DEV_INFO = Control.IOWR(30, btrfs_ioctl_dev_info_args)
     FS_INFO = Control.IOR(31, btrfs_ioctl_fs_info_args)
+    QUOTA_RESCAN = Control.IOW(44, btrfs_ioctl_quota_rescan_args)
+    QUOTA_RESCAN_WAIT = Control.IO(46)
+    QUOTA_CTL = Control.IOWR(40, btrfs_ioctl_quota_ctl_args)
 
 # define BTRFS_IOC_DEFAULT_SUBVOL _IOW(BTRFS_IOCTL_MAGIC, 19, __u64)
 # define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
@@ -567,10 +594,5 @@ class FileSystem(ioctl.Device):
 # define BTRFS_IOC_SET_RECEIVED_SUBVOL _IOWR(BTRFS_IOCTL_MAGIC, 37, \
 #                 struct btrfs_ioctl_received_subvol_args)
 # define BTRFS_IOC_SEND _IOW(BTRFS_IOCTL_MAGIC, 38, struct btrfs_ioctl_send_args)
-# define BTRFS_IOC_QUOTA_RESCAN _IOW(BTRFS_IOCTL_MAGIC, 44, \
-#                    struct btrfs_ioctl_quota_rescan_args)
 # define BTRFS_IOC_QUOTA_RESCAN_STATUS _IOR(BTRFS_IOCTL_MAGIC, 45, \
 #                    struct btrfs_ioctl_quota_rescan_args)
-# define BTRFS_IOC_QUOTA_RESCAN_WAIT _IO(BTRFS_IOCTL_MAGIC, 46)
-# define BTRFS_IOC_QUOTA_CTL _IOWR(BTRFS_IOCTL_MAGIC, 40, \
-#                    struct btrfs_ioctl_quota_ctl_args)
