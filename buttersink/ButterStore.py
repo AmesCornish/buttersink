@@ -65,8 +65,16 @@ class ButterStore(Store.Store):
         self.isDest = isDest
         self.path = os.path.abspath(path)
         logger.debug("%s", self.path)
-        self.butter = Butter.Butter(self.path)  # subprocess command-line interface
-        self.btrfs = btrfs.FileSystem(self.path)     # ioctl interface
+
+        mountPath = self.path
+        # User may have specified a destination subvolume, get the directory
+        if not os.path.exists(mountPath):
+            mountPath = os.path.dirname(mountPath)
+
+        self.mount = mountPath
+        self.butter = Butter.Butter(mountPath)  # subprocess command-line interface
+        self.btrfs = btrfs.FileSystem(mountPath)     # ioctl interface
+
         self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
         # self.volumes = self.butter.listVolumes()
         self._fillVolumesAndPaths()
@@ -89,7 +97,8 @@ class ButterStore(Store.Store):
                     continue
 
                 if vol.uuid in self.butterVolumes:
-                    logger.warn("Duplicate effective uuid")
+                    logger.warn("Duplicate effective uuid %s in '%s' and '%s'",
+                        vol.uuid, bv.fullPath, self.butterVolumes[vol.uuid].fullPath)
                 self.butterVolumes[vol.uuid] = bv
 
                 # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
@@ -140,29 +149,28 @@ class ButterStore(Store.Store):
 
     def hasEdge(self, diff):
         """ True if Store already contains this edge. """
-        return diff.toVol.uuid in self.butterVolumes and diff.fromVol.uuid in self.butterVolumes
-
-    def _fullPath(self, path):
-        return os.path.normpath(os.path.join(os.path.dirname(self.path), path))
+        return diff.toUUID in self.butterVolumes and diff.fromUUID in self.butterVolumes
 
     def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
-        path = self.selectPath(paths)
+        path = self.selectReceivePath(paths)
+        path = os.path.normpath(os.path.join(os.path.dirname(self.path), path))
         logger.debug("Receiving '%s'", path)
-        return _Writer(self.butter.receive(), self._fullPath(path))
+        return _Writer(self.butter.receive(), path)
 
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
-        path = self.selectPath(paths)
-        return open(path + ".bs")
+        path = self.selectReceivePath(paths)
+        path = os.path.normpath(os.path.join(self.path, path))
+        return open(path + ".bs", "w")
 
-    def _estimateSize(self, toVol, fromVol, changeRate):
-        fromGen = fromVol['gen']
-        genDiff = abs(toVol['gen'] - fromGen)
+    def _estimateSize(self, toBVol, fromBVol, changeRate):
+        fromGen = fromBVol.current_gen
+        genDiff = abs(toBVol.current_gen - fromGen)
 
-        estimatedSize = max(0, toVol['totalSize'] - fromVol['totalSize'])
-        estimatedSize += toVol['totalSize'] * (1 - math.exp(-changeRate * genDiff))
-        estimatedSize = max(toVol['exclusiveSize'], estimatedSize)
+        estimatedSize = max(0, toBVol.totalSize - fromBVol.totalSize)
+        estimatedSize += toBVol.totalSize * (1 - math.exp(-changeRate * genDiff))
+        estimatedSize = max(toBVol.exclusiveSize, estimatedSize)
 
         return estimatedSize
 
@@ -196,6 +204,6 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, toUUID, fromUUID, streamContext, progress=True):
-        """ Write the diff to the stream. """
-        self.butter.send(toUUID, fromUUID, streamContext, progress)
+    def send(self, diff, streamContext, progress=True):
+        """ Write the diff (toVol from fromVol) to the stream context manager. """
+        self.butter.send(diff.toUUID, diff.fromUUID, streamContext, progress)

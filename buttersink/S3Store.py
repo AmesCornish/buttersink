@@ -18,7 +18,6 @@ if True:  # Imports and constants
         import io
         import logging
         import os.path
-        import pprint
         import re
         import sys
     if True:  # Constants
@@ -32,7 +31,8 @@ if True:  # Imports and constants
         isEncrypted = True
 
         logger = logging.getLogger(__name__)
-        # logger.setLevel('DEBUG')
+
+# logger.setLevel('DEBUG')
 
 
 class S3Store(Store.Store):
@@ -129,25 +129,28 @@ class S3Store(Store.Store):
 
     def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
-        path = self.selectPah(paths)
-        path = os.path.normpath(os.path.join(self.prefix, path))
-        key = self._keyName(diff.toVol.uuid, diff.fromVol.uuid, path)
-        return _Uploader(self.bucket, key)
+        path = self._fullPath(self.selectReceivePath(paths))
+        keyName = self._keyName(diff.toVol.uuid, diff.fromVol.uuid, path)
+        return _Uploader(self.bucket, keyName)
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
     def _keyName(self, toUUID, fromUUID, path):
         return "%s/%s_%s" % (path, toUUID, fromUUID)
 
+    def _fullPath(self, path):
+        return os.path.normpath(os.path.join(self.prefix, path))
+
     def _parseKeyName(self, name):
         """ Returns dict with fullpath, to, from. """
         match = self.keyPattern.match(name)
         return match.groupdict() if match else None
 
-    def send(self, toUUID, fromUUID, streamContext, progress=True):
-        """ Write the diff to the streamContext. """
-        path = self.vols[toUUID]['fullpath']
-        key = self.bucket.get_key(self._keyName(toUUID, fromUUID, path))
+    def send(self, diff, streamContext, progress=True):
+        """ Write the diff (toVol from fromVol) to the stream context manager. """
+        path = self._fullPath(self.getSendPath(diff.toVol))
+        keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
+        key = self.bucket.get_key(keyName)
 
         with streamContext as stream:
             if progress:
@@ -155,7 +158,7 @@ class S3Store(Store.Store):
             else:
                 key.get_contents_to_file(stream)
 
-        if sys.stdout.isatty():
+        if progress:
             sys.stdout.write("\n")
 
     def _upload(self, stream, keyName):

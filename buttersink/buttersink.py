@@ -148,8 +148,7 @@ def main():
 
     if source is None:
         for vol in dest.listVolumes():
-            for path in dest.getPaths(vol):
-                print "%s %s" % (vol, path)
+            print vol.display(dest)
         return 0
 
     vols = source.listVolumes()

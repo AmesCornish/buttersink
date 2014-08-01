@@ -14,7 +14,12 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 from __future__ import division
 
 import collections
+import logging
 import math
+import os.path
+
+logger = logging.getLogger('__name__')
+# logger.setLevel('DEBUG')
 
 
 class Store(object):
@@ -43,9 +48,26 @@ class Store(object):
         """ Return list of all paths to this volume in this Store. """
         return self.paths[volume]
 
-    def selectPath(self, paths):
-        """ From a set of destination paths, select the best one to receive to. """
-        return [p for p in paths if not p.startswith("/")][0]
+    def getSendPath(self, volume):
+        """ Get a path appropriate for sending the volume from this Store.
+
+        The path may be relative or absolute in this Store.
+
+        """
+        return next(iter(self.getPaths(volume)))
+
+    def selectReceivePath(self, paths):
+        """ From a set of destination paths, select the best one to receive to.
+
+        The paths are relative or absolute, in a source Store.
+        The result will be relative, suitable for this destination Store.
+
+        """
+        logger.debug("%s", paths)
+        try:
+            return [p for p in paths if not p.startswith("/")][0]
+        except IndexError:
+            return os.path.basename(list(paths)[0])
 
     # Abstract methods
 
@@ -83,28 +105,58 @@ class Diff:
         self.sink = sink
         self.toVol = Volume.make(toVol)
         self.fromVol = Volume.make(fromVol)
-        self.size = size
-        self.sizeIsEstimated = sizeIsEstimated
+        self._size = size
+        self._sizeIsEstimated = sizeIsEstimated
 
-    def setDiffSize(self, size):
-        """ Set a known size (in bytes) for the difference from previous to self. """
-        self.theDiffs[(self.toVol, self.fromVol)] = size
+        if size is not None and not sizeIsEstimated:
+            Diff.theKnownSizes[self.toVol][self.fromVol] = size
 
-    def getDiffSize(self):
-        """ Get any known size (in bytes) for the difference from previous to self. """
-        return self.theDiffs.get((self.toVol, self.fromVol), None)
+    # {toVolume: {fromVolume: size}}
+    theKnownSizes = collections.defaultdict(lambda: collections.defaultdict(lambda: None))
+
+    @property
+    def toUUID(self):
+        """ 'to' volume's UUID. """
+        return self.toVol.uuid
+
+    @property
+    def fromUUID(self):
+        """ 'from' volume's UUID, if any. """
+        return self.fromVol.uuid if self.fromVol else None
+
+    @property
+    def size(self):
+        """ Return size. """
+        self._updateSize()
+        return self._size
+
+    @property
+    def sizeIsEstimated(self):
+        """ Return whether size is estimated. """
+        self._updateSize()
+        return self._sizeIsEstimated
+
+    def _updateSize(self):
+        if self._size and not self._sizeIsEstimated:
+            return
+
+        size = Diff.theKnownSizes[self.toVol][self.fromVol]
+
+        if size is None:
+            return
+
+        self._size = size
+        self._sizeIsEstimated = False
 
     def __str__(self):
         """ human-readable string. """
         return u"%s from %s (%s%s) in %s" % (
             self.toVol.display(self.sink),
-            self.fromVol.display(self.sink) if self.fromVol else "",
+            self.fromVol.display(self.sink) if self.fromVol else "<None>",
             humanize(self.size),
             "e" if self.sizeIsEstimated else "",
             self.sink,
         )
-
-    theDiffs = {}
 
 
 class Volume:
@@ -134,11 +186,18 @@ class Volume:
 
     def writeInfo(self, stream):
         """ Write information about diffs into a file stream for use later. """
-        raise NotImplementedError
+        for (fromVol, size) in Diff.theKnownSizes[self].iteritems():
+            if size is not None:
+                stream.write("%s\t%s\t%d\n" % (self.uuid, fromVol.uuid, size))
 
     def readInfo(self, stream):
         """ Read previously-written information about diffs. """
-        raise NotImplementedError
+        for line in stream:
+            (toUUID, fromUUID, size) = line.split()
+            if toUUID != self.uuid:
+                logger.warn("Expected UUID=%s, got %s", self.uuid, toUUID)
+                continue
+            Diff.theKnownSizes[self][Volume(fromUUID)] = size
 
     def __unicode__(self):
         """ Friendly string for volume. """
@@ -167,9 +226,9 @@ class Volume:
         else:
             size = ""
 
-        vol = "%s%s" % (
+        vol = "%s %s" % (
             printUUID(self._uuid),
-            " " + ", ".join(sink.getPaths(self)) if sink else "",
+            sink.getSendPath(self) if sink else "",
         )
 
         return vol + size
