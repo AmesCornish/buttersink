@@ -179,7 +179,7 @@ def main():
 
         diff.sink.send(diff, streamContext, progress=progress)
 
-        infoContext = dest.receiveVolumeInfo(vol, paths)
+        infoContext = dest.receiveVolumeInfo(paths)
         vol.writeInfo(infoContext)
 
     return 0

@@ -5,9 +5,9 @@ where snapshots are the nodes,
 and "send" diffs are the directed edges.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+
 """
 
-# import pprint
 import Store
 
 import logging
@@ -17,46 +17,40 @@ logger = logging.getLogger(__name__)
 
 class _Node:
 
-    def __init__(self, uuid, intermediate=False):
-        self.uuid = uuid
+    def __init__(self, volume, intermediate=False):
+        self.volume = volume
         self.intermediate = intermediate
-        self.previous = None
-        self.diffSink = None
-        self.diffSize = None
+        self.diff = None
+        self.height = None
+
+    @property
+    def diffSize(self):
+        return self.diff.size if self.diff is not None else None
+
+    @property
+    def previous(self):
+        return self.diff.fromVol if self.diff else None
+
+    @property
+    def sink(self):
+        return self.diff.sink if self.diff else None
 
     def __unicode__(self):
-        try:
-            ancestors = ", %d ancestors" % (self.height-1)
-        except AttributeError:
+        return self.display()
+
+    def display(self, sink=None):
+        if self.height is not None:
+            ancestors = " (%d ancestors)" % (self.height - 1)
+        else:
             ancestors = ""
 
-        return u"%s from %s (%s%s) in %s" % (
-            self._getPath(self.uuid),
-            self._getPath(self.previous),
-            Store.humanize(self.diffSize),
+        return u"%s%s" % (
+            self.diff or self.volume.display(sink),
             ancestors,
-            self.diffSink
         )
 
     def __str__(self):
         return unicode(self).encode('utf-8')
-
-    @staticmethod
-    def getPath(node):
-        """ Return printable description of node, if not None. """
-        if node is None:
-            return None
-        uuid = node.uuid
-        return node._getPath(uuid)
-
-    def _getPath(self, uuid):
-        """ Return printable description of uuid. """
-        result = Store.printUUID(uuid)
-        try:
-            result = "%s (%s)" % (self.diffSink.getVolume(uuid)['path'], result)
-        except (KeyError, AttributeError):
-            pass
-        return result
 
     @staticmethod
     def summary(nodes):
@@ -66,12 +60,12 @@ class _Node:
         for n in nodes:
             count += 1
 
-            if n.diffSize is not None:
-                size += n.diffSize
-                if n.diffSink in sinks:
-                    sinks[n.diffSink] += n.diffSize
+            if n.diff is not None:
+                size += n.diff.size
+                if n.diff.sink in sinks:
+                    sinks[n.diff.sink] += n.diff.size
                 else:
-                    sinks[n.diffSink] = n.diffSize
+                    sinks[n.diff.sink] = n.diff.size
 
         return {"count": count, "size": size, "sinks": sinks}
 
@@ -82,12 +76,14 @@ class BestDiffs:
 
     The nodes are the desired (or intermediate) volumes.
     The directed edges are diffs from an available sink.
+
     """
 
     def __init__(self, volumes, delete=False):
         """ Initialize.
 
         volumes are the required snapshots.
+
         """
         self.nodes = {volume: _Node(volume, False) for volume in volumes}
         self.dest = None
@@ -121,11 +117,12 @@ class BestDiffs:
                     continue
 
                 fromSize = self._totalSize(fromNode)
-                fromUUID = fromNode.uuid if fromNode else None
+                fromVol = fromNode.volume if fromNode else None
 
                 logger.debug(
                     "Following edges from %s (total %s)",
-                    _Node.getPath(fromNode), Store.humanize(fromSize)
+                    fromNode.display(sinks[-1]) if fromNode is not None else None,
+                    Store.humanize(fromSize),
                 )
 
                 for sink in sinks:
@@ -134,49 +131,47 @@ class BestDiffs:
                         sink
                     )
 
-                    for edge in sink.getEdges(fromUUID):
-                        toUUID = edge['to']
+                    for edge in sink.getEdges(fromVol):
+                        toVol = edge.toVol
 
                         # Skip any edges already in the destination
-                        if sink != self.dest and self.dest.hasEdge(toUUID, fromUUID):
+                        if sink != self.dest and self.dest.hasEdge(edge):
                             continue
 
-                        if toUUID in self.nodes:
-                            toNode = self.nodes[toUUID]
+                        if toVol in self.nodes:
+                            toNode = self.nodes[toVol]
                         else:
-                            toNode = _Node(toUUID, True)
-                            self.nodes[toUUID] = toNode
+                            toNode = _Node(toVol, True)
+                            self.nodes[toVol] = toNode
 
-                        newCost = self._cost(sink, edge['size'], fromSize, height)
-                        if toNode.diffSink is None:
+                        newCost = self._cost(sink, edge.size, fromSize, height)
+                        if toNode.diff is None:
                             oldCost = None
                         else:
                             oldCost = self._cost(
-                                toNode.diffSink,
+                                toNode.sink,
                                 toNode.diffSize,
                                 fromSize,
                                 self._height(toNode)
-                                )
+                            )
 
                         # Don't use a more-expensive path
                         if oldCost is not None and oldCost <= newCost:
                             continue
 
                         # Don't create circular paths
-                        if self._wouldLoop(fromUUID, toUUID):
-                            logger.debug("Ignoring looping edge: %s", toNode._getPath(edge['to']))
+                        if self._wouldLoop(fromVol, toVol):
+                            logger.debug("Ignoring looping edge: %s", toVol.display(sink))
                             continue
 
                         logger.debug(
                             "Replacing edge (%s -> %s cost) %s",
                             Store.humanize(oldCost),
                             Store.humanize(newCost),
-                            toNode
+                            toNode.display(sink)
                         )
 
-                        toNode.previous = fromUUID
-                        toNode.diffSink = sink
-                        toNode.diffSize = edge['size']
+                        toNode.diff = edge
 
             nodes = [node for node in self.nodes.values() if self._height(node) == height]
             height += 1
@@ -185,6 +180,9 @@ class BestDiffs:
 
         for node in self.nodes.values():
             node.height = self._height(node)
+
+    def _getNode(self, vol):
+        return self.nodes[vol] if vol is not None else None
 
     def _height(self, node):
         if node is None:
@@ -200,18 +198,15 @@ class BestDiffs:
 
         return (node.diffSize or 0) + prevSize
 
-    def _getNode(self, uuid):
-        return self.nodes[uuid] if uuid is not None else None
-
-    def _wouldLoop(self, fromNode, toNode):
-        if toNode is None:
+    def _wouldLoop(self, fromVol, toVol):
+        if toVol is None:
             return False
 
-        while fromNode is not None:
-            if fromNode == toNode:
+        while fromVol is not None:
+            if fromVol == toVol:
                 return True
 
-            fromNode = self.nodes[fromNode].previous
+            fromVol = self.nodes[fromVol].previous
 
         return False
 
@@ -220,7 +215,7 @@ class BestDiffs:
         nodes = self.nodes.values()
         nodes.sort(key=lambda node: self._height(node))
         for node in nodes:
-            yield node
+            yield node.diff
             # yield { 'from': node.previous, 'to': node.uuid, 'sink': node.diffSink,
 
     def summary(self):
@@ -233,9 +228,9 @@ class BestDiffs:
         while not done:
             done = True
             for node in [node for node in self.nodes.values() if node.intermediate]:
-                if not [dep for dep in self.nodes.values() if dep.previous == node.uuid]:
-                    logger.debug("Removing unnecessary node %s", _Node.getPath(node))
-                    del self.nodes[node.uuid]
+                if not [dep for dep in self.nodes.values() if dep.previous == node.volume]:
+                    logger.debug("Removing unnecessary node %s", node)
+                    del self.nodes[node.volume]
                     done = False
 
     def _cost(self, sink, size, prevSize, height):

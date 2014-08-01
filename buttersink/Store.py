@@ -43,6 +43,10 @@ class Store(object):
         """ Return list of all paths to this volume in this Store. """
         return self.paths[volume]
 
+    def selectPath(self, paths):
+        """ From a set of destination paths, select the best one to receive to. """
+        return [p for p in paths if not p.startswith("/")][0]
+
     # Abstract methods
 
     def _fillVolumesAndPaths(self):
@@ -65,7 +69,7 @@ class Store(object):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         raise NotImplementedError
 
-    def receiveVolumeInfo(self, volume, paths):
+    def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         return NotImplementedError
 
@@ -84,11 +88,23 @@ class Diff:
 
     def setDiffSize(self, size):
         """ Set a known size (in bytes) for the difference from previous to self. """
-        Volume.theDiffs[(self.uuid, previousUUID)] = size
+        self.theDiffs[(self.toVol, self.fromVol)] = size
 
     def getDiffSize(self):
         """ Get any known size (in bytes) for the difference from previous to self. """
-        return Volume.theDiffs.get((self.uuid, previousUUID), None)
+        return self.theDiffs.get((self.toVol, self.fromVol), None)
+
+    def __str__(self):
+        """ human-readable string. """
+        return u"%s from %s (%s%s) in %s" % (
+            self.toVol.display(self.sink),
+            self.fromVol.display(self.sink) if self.fromVol else "",
+            humanize(self.size),
+            "e" if self.sizeIsEstimated else "",
+            self.sink,
+        )
+
+    theDiffs = {}
 
 
 class Volume:
@@ -97,6 +113,7 @@ class Volume:
 
     def __init__(self, uuid, size=None, exclusiveSize=None, gen=None):
         """ Initialize. """
+        assert uuid is not None
         self._uuid = uuid  # Must never change!
         self.size = size
         self.exclusiveSize = exclusiveSize
@@ -104,7 +121,7 @@ class Volume:
 
     def __cmp__(self, vol):
         """ Compare. """
-        return cmp(self._uuid, vol._uuid)
+        return cmp(self._uuid, vol._uuid) if vol else 1
 
     def __hash__(self):
         """ Hash. """
@@ -114,8 +131,6 @@ class Volume:
     def uuid(self):
         """ Read-only uuid. """
         return self._uuid
-    
-    theDiffs = {}
 
     def writeInfo(self, stream):
         """ Write information about diffs into a file stream for use later. """
@@ -127,30 +142,64 @@ class Volume:
 
     def __unicode__(self):
         """ Friendly string for volume. """
-        size = ""
-        if self.exclusiveSize is not None:
-            size += "%s exclusive" % (printBytes(self.exclusiveSize))
-        if self.size is not None:
-            size = "%s, " % (printBytes(self.size)) + size
-
-        if size:
-            return "%s (%s)" % (self.uuid, size)
-        else:
-            return unicode(self.uuid)
+        return self.display()
 
     def __str__(self):
         """ Friendly string for volume. """
         return unicode(self).encode('utf-8')
 
-    def printVolume(vol):
-        """ Return string for dict containing volume info. """
+    def __repr__(self):
+        """ Python expression to create self. """
+        return "%s(%s)" % (
+            self.__class__,
+            self.__dict__,
+        )
+
+    def display(self, sink=None):
+        """ Friendly string for volume, using sink paths. """
+        if self.size is not None:
+            size = " (%s%s)" % (
+                printBytes(self.size),
+                "" if self.exclusiveSize is None else (
+                    " %s exclusive" % (printBytes(self.exclusiveSize))
+                )
+            )
+        else:
+            size = ""
+
+        vol = "%s%s" % (
+            printUUID(self._uuid),
+            " " + ", ".join(sink.getPaths(self)) if sink else "",
+        )
+
+        return vol + size
+
+    @staticmethod
+    def getPath(node):
+        """ Return printable description of node, if not None. """
+        if node is None:
+            return None
+        uuid = node.uuid
+        return node._getPath(uuid)
+
+    def _getPath(self, uuid):
+        """ Return printable description of uuid. """
+        result = Store.printUUID(uuid)
+        try:
+            result = "%s (%s)" % (self.diffSink.getVolume(uuid)['path'], result)
+        except (KeyError, AttributeError):
+            pass
+        return result
 
     @classmethod
     def make(cls, vol):
         """ Convert uuid to Volume, if necessary. """
         if isinstance(vol, cls):
             return vol
-        return cls(vol)
+        elif vol is None:
+            return None
+        else:
+            return cls(vol)
 
 
 def printBytes(number):
@@ -167,9 +216,9 @@ def humanize(number):
     if number is None:
         return None
     pow = int(math.log(number, base)) if number > 0 else 0
-    pow = min(pow, len(units)-1)
+    pow = min(pow, len(units) - 1)
     mantissa = number / (base ** pow)
-    return "%.3f %s" % (mantissa, units[pow])
+    return "%.3g %s" % (mantissa, units[pow])
 
 
 def printUUID(uuid):

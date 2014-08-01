@@ -25,9 +25,8 @@ class _Writer:
 
     """ Context Manager to write a snapshot. """
 
-    def __init__(self, stream, volume, path):
+    def __init__(self, stream, path):
         self.stream = stream
-        self.volume = volume
         self.path = path
 
     def __enter__(self):
@@ -37,8 +36,6 @@ class _Writer:
         self.stream.__exit__(exceptionType, exception, trace)
 
         if exception is None:
-            with open(self.path + ".bs") as stream:
-                self.volume.writeInfo(stream)
             return
 
         if not os.path.exists(self.path):
@@ -76,18 +73,19 @@ class ButterStore(Store.Store):
 
     def _btrfsVol2StoreVol(self, bvol):
         uuid = bvol.received_uuid if self.isDest else bvol.uuid
+        if uuid is None:
+            return None
         return Store.Volume(uuid, bvol.totalSize, bvol.exclusiveSize, bvol.current_gen)
 
     def _fillVolumesAndPaths(self):
         """ Fill in self.paths. """
-        # import pudb; pudb.set_trace()
         with self.btrfs as mount:
             for bv in mount.subvolumes:
                 if not bv.readOnly:
                     continue
 
                 vol = self._btrfsVol2StoreVol(bv)
-                if vol.uuid is None:
+                if vol is None:
                     continue
 
                 if vol.uuid in self.butterVolumes:
@@ -97,7 +95,7 @@ class ButterStore(Store.Store):
                 # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
                 for path in bv.linuxPaths:
                     if path.startswith(self.path):
-                        path = path[len(self.path)+1:]
+                        path = path[len(self.path) + 1:]
                     logger.debug("%s %s", vol, path)
                     self.paths[vol].add(path)
 
@@ -129,7 +127,7 @@ class ButterStore(Store.Store):
         changeRate = self._calcChangeRate(vols)
 
         for toBVol in vols:
-            if toBVol == fromVol:
+            if toBVol == fromBVol:
                 continue
 
             # This gives a conservative estimate of the size of the diff
@@ -140,17 +138,23 @@ class ButterStore(Store.Store):
 
             yield Store.Diff(self, toVol, fromVol, estimatedSize, True)
 
-    def hasEdge(self, toUUID, fromUUID):
-        """ Store already contains this edge. """
-        return toUUID in self.volumes and fromUUID in self.volumes
+    def hasEdge(self, diff):
+        """ True if Store already contains this edge. """
+        return diff.toVol.uuid in self.butterVolumes and diff.fromVol.uuid in self.butterVolumes
 
     def _fullPath(self, path):
         return os.path.normpath(os.path.join(os.path.dirname(self.path), path))
 
-    def receive(self, toUUID, fromUUID, volume, path):
-        """ Return a file-like (stream) object to store a diff. """
+    def receive(self, diff, paths):
+        """ Return Context Manager for a file-like (stream) object to store a diff. """
+        path = self.selectPath(paths)
         logger.debug("Receiving '%s'", path)
-        return _Writer(self.butter.receive(), volume, self._fullPath(path))
+        return _Writer(self.butter.receive(), self._fullPath(path))
+
+    def receiveVolumeInfo(self, paths):
+        """ Return Context Manager for a file-like (stream) object to store volume info. """
+        path = self.selectPath(paths)
+        return open(path + ".bs")
 
     def _estimateSize(self, toVol, fromVol, changeRate):
         fromGen = fromVol['gen']
@@ -162,27 +166,27 @@ class ButterStore(Store.Store):
 
         return estimatedSize
 
-    def _calcChangeRate(self, vols):
+    def _calcChangeRate(self, bvols):
         total = 0
         diffs = 0
-        minGen = vols[0]['gen']
+        minGen = bvols[0].current_gen
         maxGen = minGen
-        minSize = vols[0]['totalSize']
+        minSize = bvols[0].totalSize
         maxSize = minSize
 
-        for vol in vols:
-            total += vol['totalSize']
-            diffs += vol['exclusiveSize']
-            minGen = min(minGen, vol['gen'])
-            maxGen = max(maxGen, vol['gen'])
-            minSize = min(minSize, vol['totalSize'])
-            maxSize = max(maxSize, vol['totalSize'])
+        for vol in bvols:
+            total += vol.totalSize
+            diffs += vol.exclusiveSize
+            minGen = min(minGen, vol.current_gen)
+            maxGen = max(maxGen, vol.current_gen)
+            minSize = min(minSize, vol.totalSize)
+            maxSize = max(maxSize, vol.totalSize)
 
         try:
             # exclusiveSize is often useless,
             # because data may be shared with read-write volumes not usable for send operations
             diffs = max(diffs, maxSize - minSize)
-            rate = - math.log(1 - diffs / total) * (len(vols) - 1) / (maxGen - minGen)
+            rate = - math.log(1 - diffs / total) * (len(bvols) - 1) / (maxGen - minGen)
             rate /= 10  # Fudge
         except (ZeroDivisionError, ValueError):
             logger.debug("Using minimum change rate.")

@@ -109,12 +109,14 @@ class S3Store(Store.Store):
             if not path:
                 path = "."
 
+            logger.debug("Adding %s", path)
+
             diff = Store.Diff(self, keyInfo['to'], keyInfo['from'], key.size)
 
             self.diffs[diff.fromVol].append(diff)
             self.paths[diff.toVol].add(path)
 
-        logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
+        # logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
         # logger.debug("Vols:\n%s", pprint.pformat(self.vols))
 
     def getEdges(self, fromVol):
@@ -125,10 +127,12 @@ class S3Store(Store.Store):
         """ Test whether edge is in this sink. """
         return diff.toVol in [d.toVol for d in self.diffs[diff.fromVol]]
 
-    def receive(self, toUUID, fromUUID, volume, path):
-        """ Return a file-like (stream) object to store a diff. """
+    def receive(self, diff, paths):
+        """ Return Context Manager for a file-like (stream) object to store a diff. """
+        path = self.selectPah(paths)
         path = os.path.normpath(os.path.join(self.prefix, path))
-        return _Uploader(self.bucket, self._keyName(toUUID, fromUUID, path), volume)
+        key = self._keyName(diff.toVol.uuid, diff.fromVol.uuid, path)
+        return _Uploader(self.bucket, key)
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
