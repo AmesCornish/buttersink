@@ -46,7 +46,7 @@ def main():
     args = command.parse_args()
         
     with btrfs.FileSystem(args.dir) as mount:
-        mount.rescanSizes()
+        # mount.rescanSizes()
 
         fInfo = mount.FS_INFO()
         pprint.pprint(fInfo)

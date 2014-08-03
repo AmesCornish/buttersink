@@ -371,8 +371,9 @@ class Volume(object):
         """ String representation. """
         # logger.debug("%d %d %d", self.gen, self.info.generation, self.info.inode.generation)
         # logger.debug("%o %o", self.info.flags, self.info.inode.flags)
-        # return pretty(self.__dict__)
-        return "%4d '%s' (level:%d gen:%d total:%d exclusive:%d%s)\n\t%s (parent:%s received:%s)\n\t%s" % (
+        return """%4d '%s' (level:%d gen:%d total:%d exclusive:%d%s)
+        %s (parent:%s received:%s)
+        %s%s""" % (
             self.id,
             # ", ".join([dirPath + name for (dirPath, name) in self.links.values()]),
             self.fullPath,
@@ -386,6 +387,8 @@ class Volume(object):
             self.parent_uuid,
             self.received_uuid,
             "\n\t".join(self.linuxPaths),
+            # "\n\t" + pretty(self.__dict__),
+            "",
         )
 
 
