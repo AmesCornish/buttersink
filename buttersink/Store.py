@@ -95,7 +95,7 @@ class Store(object):
 
     def receiveVolumeInfo(self, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
-        return NotImplementedError
+        raise NotImplementedError
 
 
 class Diff:

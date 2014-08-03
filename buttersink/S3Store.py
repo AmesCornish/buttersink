@@ -140,6 +140,13 @@ class S3Store(Store.Store):
 
         return _Uploader(self.bucket, keyName)
 
+    def receiveVolumeInfo(self, paths, dryrun=False):
+        """ Return Context Manager for a file-like (stream) object to store volume info. """
+        path = self.selectReceivePath(paths)
+        path = self._fullPath(path)
+        path = path + ".bs"
+        return _Uploader(self.bucket, path)
+
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
     def _keyName(self, toUUID, fromUUID, path):
@@ -238,6 +245,10 @@ class _Uploader:
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
         self.close(abort=exceptionType is not None)
+        if exceptionType is not None:
+            logger.error("abort")
+        else:
+            logger.debug("close")
         return False  # Don't supress exception
 
     def write(self, bytes):
