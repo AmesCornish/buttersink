@@ -148,7 +148,7 @@ def main():
 
     if source is None:
         for vol in dest.listVolumes():
-            print vol.display(dest)
+            print vol.display(dest, detail="line")
         return 0
 
     vols = source.listVolumes()
@@ -168,17 +168,18 @@ def main():
         if diff.sink == dest:
             continue
 
-        if args.dry_run:
-            continue
-
         vol = diff.toVol
         paths = diff.sink.getPaths(vol)
 
-        streamContext = dest.receive(diff, paths)
+        streamContext = dest.receive(diff, paths, dryrun=args.dry_run)
 
-        diff.sink.send(diff, streamContext, progress=progress)
+        diff.sink.send(diff, streamContext, progress=progress, dryrun=args.dry_run)
 
-        infoContext = dest.receiveVolumeInfo(paths)
+        infoContext = dest.receiveVolumeInfo(paths, dryrun=args.dry_run)
+
+        if args.dry_run:
+            infoContext = sys.stdout
+
         vol.writeInfo(infoContext)
 
     return 0

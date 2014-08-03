@@ -41,6 +41,8 @@ class _Writer:
         if not os.path.exists(self.path):
             return
 
+        # This tries to mark partial (failed) transfers.
+
         partial = self.path + ".part"
 
         if os.path.exists(partial):
@@ -96,17 +98,26 @@ class ButterStore(Store.Store):
                 if vol is None:
                     continue
 
-                if vol.uuid in self.butterVolumes:
-                    logger.warn("Duplicate effective uuid %s in '%s' and '%s'",
-                        vol.uuid, bv.fullPath, self.butterVolumes[vol.uuid].fullPath)
-                self.butterVolumes[vol.uuid] = bv
-
                 # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
                 for path in bv.linuxPaths:
                     if path.startswith(self.path):
                         path = path[len(self.path) + 1:]
+                    elif self.ignoreExtraVolumes:
+                        continue
+
                     logger.debug("%s %s", vol, path)
                     self.paths[vol].add(path)
+
+                if vol not in self.paths:
+                    continue
+
+                if vol.uuid in self.butterVolumes:
+                    logger.warn(
+                        "Duplicate effective uuid %s in '%s' and '%s'",
+                        vol.uuid, bv.fullPath, self.butterVolumes[vol.uuid].fullPath
+                        )
+
+                self.butterVolumes[vol.uuid] = bv
 
     def __unicode__(self):
         """ English description of self. """
@@ -128,9 +139,11 @@ class ButterStore(Store.Store):
 
         fromBVol = self.butterVolumes[fromVol.uuid]
         parentUUID = fromBVol.parent_uuid
+        butterDir = os.path.dirname(fromBVol.fullPath)
 
         vols = [vol for vol in self.butterVolumes.values()
-                if vol.parent_uuid == parentUUID
+                if vol.parent_uuid == parentUUID or
+                os.path.dirname(vol.fullPath) == butterDir
                 ]
 
         changeRate = self._calcChangeRate(vols)
@@ -151,18 +164,30 @@ class ButterStore(Store.Store):
         """ True if Store already contains this edge. """
         return diff.toUUID in self.butterVolumes and diff.fromUUID in self.butterVolumes
 
-    def receive(self, diff, paths):
+    def receive(self, diff, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         path = self.selectReceivePath(paths)
         path = os.path.normpath(os.path.join(os.path.dirname(self.path), path))
         logger.debug("Receiving '%s'", path)
-        return _Writer(self.butter.receive(), path)
 
-    def receiveVolumeInfo(self, paths):
+        stream = self.butter.receive(os.path.dirname(path), dryrun)
+
+        if dryrun:
+            return None
+
+        return _Writer(stream, path)
+
+    def receiveVolumeInfo(self, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         path = self.selectReceivePath(paths)
         path = os.path.normpath(os.path.join(self.path, path))
-        return open(path + ".bs", "w")
+        path = path + ".bs"
+
+        if dryrun:
+            print("receive to %s" % (path))
+            return None
+
+        return open(path, "w")
 
     def _estimateSize(self, toBVol, fromBVol, changeRate):
         fromGen = fromBVol.current_gen
@@ -204,6 +229,6 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, diff, streamContext, progress=True):
+    def send(self, diff, streamContext, progress=True, dryrun=False):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
-        self.butter.send(diff.toUUID, diff.fromUUID, streamContext, progress)
+        self.butter.send(diff.toUUID, diff.fromUUID, streamContext, progress, dryrun)

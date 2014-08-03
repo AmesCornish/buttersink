@@ -51,6 +51,12 @@ EXEC=sudo ./butter_sink.py ${OPTS}
 TEST_DIR=/mnt/butter/bs-test
 TEST_BUCKET=butter-sink
 
+.PHONY : test_quick
+test_quick :
+	! grep -I '^[^#]*logger\.setLevel(' -r .
+	! grep -I pudb $$(find -name '*.py')
+	python -m doctest buttersink/ioctl.py
+
 .PHONY : test_backup
 test_backup : ${TEST_DIR}/snaps/A ${TEST_DIR}/snaps/B ${TEST_DIR}/snaps/C
 	${EXEC} file://${TEST_DIR}/snaps s3://${TEST_BUCKET}/test/

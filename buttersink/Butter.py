@@ -172,13 +172,21 @@ class Butter:
 
         return vols
 
-    def receive(self):
+    def receive(self, directory, dryrun=False):
         """ Return a file-like (stream) object to store a diff. """
-        cmd = ["btrfs", "receive", self.userPath]
+        directory = os.path.normpah(os.path.join(self.userPath, directory))
+        cmd = ["btrfs", "receive", directory]
+
+        if dryrun:
+            print("%s" % (" ".join(cmd)))
+            return None
+
         self._fileSystemSync()
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr, stdout=DEVNULL)
+
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
+
         return process.stdin
 
     def _getPath(self, uuid):
@@ -204,18 +212,22 @@ class Butter:
     def _butter2LinuxPath(self, path):
         raise NotImplementedError
 
-    def send(self, uuid, parent, streamContext, progress=True):
+    def send(self, uuid, parent, streamContext, progress=True, dryrun=False):
         """ Write a (incremental) snapshot to the stream context manager. """
         targetPath = self._getPath(uuid)
-
-        self._fileSystemSync()
 
         if parent is not None:
             cmd = ["btrfs", "send", "-p", self._getPath(parent), targetPath]
         else:
             cmd = ["btrfs", "send", targetPath]
 
+        if dryrun:
+            print(" ".join(cmd))
+            return
+
         logger.debug("Command: %s", cmd)
+
+        self._fileSystemSync()
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
         ps = psutil.Process(process.pid)

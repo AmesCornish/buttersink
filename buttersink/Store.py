@@ -31,6 +31,8 @@ class Store(object):
 
     """
 
+    ignoreExtraVolumes = True
+
     def __init__(self):
         """ Initialize. """
         # { vol: [path] }
@@ -83,15 +85,15 @@ class Store(object):
         """ True if Store already contains this edge. """
         raise NotImplementedError
 
-    def receive(self, diff, paths):
+    def receive(self, diff, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         raise NotImplementedError
 
-    def send(self, diff, streamContext, progress=True):
+    def send(self, diff, streamContext, progress=True, dryrun=False):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         raise NotImplementedError
 
-    def receiveVolumeInfo(self, paths):
+    def receiveVolumeInfo(self, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         return NotImplementedError
 
@@ -108,7 +110,7 @@ class Diff:
         self._size = size
         self._sizeIsEstimated = sizeIsEstimated
 
-        if size is not None and not sizeIsEstimated:
+        if self.fromVol is not None and size is not None and not sizeIsEstimated:
             Diff.theKnownSizes[self.toVol][self.fromVol] = size
 
     # {toVolume: {fromVolume: size}}
@@ -154,7 +156,7 @@ class Diff:
             self.toVol.display(self.sink),
             self.fromVol.display(self.sink) if self.fromVol else "<None>",
             humanize(self.size),
-            "e" if self.sizeIsEstimated else "",
+            "-e" if self.sizeIsEstimated else "",
             self.sink,
         )
 
@@ -187,8 +189,12 @@ class Volume:
     def writeInfo(self, stream):
         """ Write information about diffs into a file stream for use later. """
         for (fromVol, size) in Diff.theKnownSizes[self].iteritems():
-            if size is not None:
-                stream.write("%s\t%s\t%d\n" % (self.uuid, fromVol.uuid, size))
+            if size is not None and fromVol is not None:
+                stream.write("%s\t%s\t%d\n" % (
+                    self.uuid,
+                    fromVol.uuid if fromVol else "<None>",
+                    size,
+                    ))
 
     def readInfo(self, stream):
         """ Read previously-written information about diffs. """
@@ -214,9 +220,9 @@ class Volume:
             self.__dict__,
         )
 
-    def display(self, sink=None):
+    def display(self, sink=None, detail='phrase'):
         """ Friendly string for volume, using sink paths. """
-        if self.size is not None:
+        if detail in ('line', 'paragraph') and self.size is not None:
             size = " (%s%s)" % (
                 printBytes(self.size),
                 "" if self.exclusiveSize is None else (
@@ -277,7 +283,7 @@ def humanize(number):
     pow = int(math.log(number, base)) if number > 0 else 0
     pow = min(pow, len(units) - 1)
     mantissa = number / (base ** pow)
-    return "%.3g %s" % (mantissa, units[pow])
+    return "%.4g %s" % (mantissa, units[pow])
 
 
 def printUUID(uuid):

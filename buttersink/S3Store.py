@@ -105,6 +105,8 @@ class S3Store(Store.Store):
             else:
                 path = "/" + keyInfo['fullpath']
                 assert path[0] == '/', path  # Indicates absolute path
+                if self.ignoreExtraVolumes:
+                    continue
 
             if not path:
                 path = "."
@@ -127,10 +129,15 @@ class S3Store(Store.Store):
         """ Test whether edge is in this sink. """
         return diff.toVol in [d.toVol for d in self.diffs[diff.fromVol]]
 
-    def receive(self, diff, paths):
+    def receive(self, diff, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         path = self._fullPath(self.selectReceivePath(paths))
         keyName = self._keyName(diff.toVol.uuid, diff.fromVol.uuid, path)
+
+        if dryrun:
+            print("receive %s in %s" % (keyName, self))
+            return None
+
         return _Uploader(self.bucket, keyName)
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
@@ -146,11 +153,15 @@ class S3Store(Store.Store):
         match = self.keyPattern.match(name)
         return match.groupdict() if match else None
 
-    def send(self, diff, streamContext, progress=True):
+    def send(self, diff, streamContext, progress=True, dryrun=False):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         path = self._fullPath(self.getSendPath(diff.toVol))
         keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
         key = self.bucket.get_key(keyName)
+
+        if dryrun:
+            print("send %s in %s" % (keyName, self))
+            return
 
         with streamContext as stream:
             if progress:
@@ -178,6 +189,7 @@ class S3Store(Store.Store):
 
 
 class _DisplayProgress:
+
     def __init__(self):
         self.startTime = datetime.datetime.now()
 
@@ -186,7 +198,7 @@ class _DisplayProgress:
             return
 
         elapsed = datetime.datetime.now() - self.startTime
-        mbps = (sent * 8 / (10**6) / elapsed.total_seconds())
+        mbps = (sent * 8 / (10 ** 6) / elapsed.total_seconds())
 
         sys.stdout.write(
             "\r %s: Sent %s of %s (%d%%) (%.3g Mbps) %20s\r" % (
@@ -196,7 +208,7 @@ class _DisplayProgress:
                 int(100 * sent / total),
                 mbps,
                 " ",
-                )
+            )
         )
 
         sys.stdout.flush()

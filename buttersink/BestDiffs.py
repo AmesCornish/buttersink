@@ -134,6 +134,8 @@ class BestDiffs:
                     for edge in sink.getEdges(fromVol):
                         toVol = edge.toVol
 
+                        logger.debug("Edge: %s", edge)
+
                         # Skip any edges already in the destination
                         if sink != self.dest and self.dest.hasEdge(edge):
                             continue
@@ -237,12 +239,16 @@ class BestDiffs:
         cost = 0
 
         # Transfer
-        cost += size if sink != self.dest else 0
+        if sink != self.dest:
+            cost += size
 
         # Storage
-        cost += size if self.delete or sink != self.dest else 0
+        if sink != self.dest or self.delete:
+            cost += size
 
         # Corruption risk
         cost += (prevSize + size) * (2 ** (height - 8))
+
+        logger.debug("_cost=%d (%s %d %d %d)", cost, sink, size, prevSize, height)
 
         return cost
