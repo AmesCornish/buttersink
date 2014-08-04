@@ -13,6 +13,8 @@ if True:  # Headers
         import subprocess
         import sys
 
+        import Store
+
     if True:  # constants
         import logging
         logger = logging.getLogger(__name__)
@@ -174,11 +176,10 @@ class Butter:
 
     def receive(self, directory, dryrun=False):
         """ Return a file-like (stream) object to store a diff. """
-        directory = os.path.normpah(os.path.join(self.userPath, directory))
+        directory = os.path.normpath(os.path.join(self.userPath, directory))
         cmd = ["btrfs", "receive", directory]
 
-        if dryrun:
-            print("%s" % (" ".join(cmd)))
+        if Store.skipDryRun(logger, dryrun)("Command: %s", cmd):
             return None
 
         self._fileSystemSync()
@@ -221,11 +222,8 @@ class Butter:
         else:
             cmd = ["btrfs", "send", targetPath]
 
-        if dryrun:
-            print(" ".join(cmd))
+        if Store.skipDryRun(logger, dryrun)("Command: %s", cmd):
             return
-
-        logger.debug("Command: %s", cmd)
 
         self._fileSystemSync()
 

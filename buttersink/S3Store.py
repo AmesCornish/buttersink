@@ -17,7 +17,6 @@ if True:  # Imports and constants
         import datetime
         import io
         import logging
-        import os.path
         import re
         import sys
     if True:  # Constants
@@ -46,19 +45,11 @@ class S3Store(Store.Store):
         path is an object key prefix to use.
 
         """
-        super(S3Store, self).__init__()
+        super(S3Store, self).__init__("/" + path, isDest)
 
         self.isDest = isDest
 
         self.bucketName = host
-
-        if path:
-            path = path.strip("/")
-        if path:
-            path += "/"
-        else:
-            path = ""
-        self.prefix = path
 
         self.keyPattern = re.compile(S3Store.theKeyPattern % ())
 
@@ -96,24 +87,23 @@ class S3Store(Store.Store):
                     logger.warn("Ignoring '%s' in S3", key.name)
                 continue
 
+            if keyInfo['type'] == 'info':
+                stream = io.BytesIO()
+                key.get_contents_to_file(stream)
+                Store.Volume.readInfo(stream)
+                continue
+
             if keyInfo['from'] == 'None':
                 keyInfo['from'] = None
 
-            if keyInfo['fullpath'].startswith(self.prefix.rstrip("/")):
-                path = keyInfo['fullpath'][len(self.prefix):]
-                assert not path or path[0] != '/', path  # Indicates relative path
-            else:
-                path = "/" + keyInfo['fullpath']
-                assert path[0] == '/', path  # Indicates absolute path
-                if self.ignoreExtraVolumes:
-                    continue
+            path = self._relativePath("/" + keyInfo['fullpath'])
 
-            if not path:
-                path = "."
-
-            logger.debug("Adding %s", path)
+            if path is None:
+                continue
 
             diff = Store.Diff(self, keyInfo['to'], keyInfo['from'], key.size)
+
+            logger.debug("Adding %s in %s", diff, path)
 
             self.diffs[diff.fromVol].append(diff)
             self.paths[diff.toVol].add(path)
@@ -131,11 +121,10 @@ class S3Store(Store.Store):
 
     def receive(self, diff, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
-        path = self._fullPath(self.selectReceivePath(paths))
-        keyName = self._keyName(diff.toVol.uuid, diff.fromVol.uuid, path)
+        path = self.selectReceivePath(paths)
+        keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
 
-        if dryrun:
-            print("receive %s in %s" % (keyName, self))
+        if Store.skipDryRun(logger, dryrun)("receive %s in %s", keyName, self):
             return None
 
         return _Uploader(self.bucket, keyName)
@@ -143,8 +132,11 @@ class S3Store(Store.Store):
     def receiveVolumeInfo(self, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         path = self.selectReceivePath(paths)
-        path = self._fullPath(path)
         path = path + ".bs"
+
+        if Store.skipDryRun(logger, dryrun)("receive info in '%s'", path):
+            return None
+
         return _Uploader(self.bucket, path)
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
@@ -152,22 +144,27 @@ class S3Store(Store.Store):
     def _keyName(self, toUUID, fromUUID, path):
         return "%s/%s_%s" % (path, toUUID, fromUUID)
 
-    def _fullPath(self, path):
-        return os.path.normpath(os.path.join(self.prefix, path))
-
     def _parseKeyName(self, name):
         """ Returns dict with fullpath, to, from. """
+        if name.endswith(".bs"):
+            return {'type': 'info'}
+
         match = self.keyPattern.match(name)
-        return match.groupdict() if match else None
+        if not match:
+            return None
+
+        match = match.groupdict()
+        match.update(type='diff')
+
+        return match
 
     def send(self, diff, streamContext, progress=True, dryrun=False):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
-        path = self._fullPath(self.getSendPath(diff.toVol))
+        path = self.getSendPath(diff.toVol)
         keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
         key = self.bucket.get_key(keyName)
 
-        if dryrun:
-            print("send %s in %s" % (keyName, self))
+        if Store.skipDryRun(logger, dryrun)("send %s in %s", keyName, self):
             return
 
         with streamContext as stream:

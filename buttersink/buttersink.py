@@ -3,6 +3,7 @@
 """ Main program to synchronize btrfs snapshots.  See README.md.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+
 """
 
 if True:  # Headers
@@ -18,18 +19,25 @@ if True:  # Headers
         import S3Store
         import Store
 
-theVersion = '0.2+'
-theDebug = True
+theDebug = False
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
+theVersionFile = "version.txt"
+try:
+    with open(theVersionFile) as version:
+        theVersion = version.readline()
+except IOError:
+    print("Missing '%s'" % (theVersionFile))
+    theVersion = "<unknown>"
+
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
     epilog="""
-<src>, <dst>:   file:///path/to/directory
+<src>, <dst>:   file:///path/to/directory/[snapshot]
                 ssh://[user@]host/path/to/directory (Not implemented)
-                s3://bucket/prefix[/snapshot]
+                s3://bucket/prefix/[snapshot]
 
 If only <dst> is supplied, just list available snapshots.
 
@@ -163,26 +171,39 @@ def main():
         logger.info("%s from %s", Store.humanize(size), sink)
 
     for diff in best.iterDiffs():
-        logger.info("%s: %s", "Keep" if diff.sink == dest else "Xfer", diff)
-
-        if diff.sink == dest:
+        if diff is None:
+            raise Exception("Missing diff.  Can't fully replicate.")
             continue
+
+        logger.info("%s: %s", "Keep" if diff.sink == dest else "Xfer", diff)
 
         vol = diff.toVol
         paths = diff.sink.getPaths(vol)
 
-        streamContext = dest.receive(diff, paths, dryrun=args.dry_run)
+        if diff.sink != dest:
+            streamContext = dest.receive(diff, paths, dryrun=args.dry_run)
 
-        diff.sink.send(diff, streamContext, progress=progress, dryrun=args.dry_run)
+            diff.sink.send(diff, streamContext, progress=progress, dryrun=args.dry_run)
 
-        infoContext = dest.receiveVolumeInfo(paths, dryrun=args.dry_run)
+        # TODO: For symmetry, put this into the streamContext.__exit__ method
 
-        if args.dry_run:
-            infoContext = sys.stdout
+        if vol.hasInfo():
+            infoContext = dest.receiveVolumeInfo(paths, dryrun=args.dry_run)
 
-        vol.writeInfo(infoContext)
+            if args.dry_run:
+                vol.writeInfo(sys.stdout)
+            else:
+                with infoContext as stream:
+                    vol.writeInfo(stream)
 
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as err:
+        if theDebug:
+            logger.exception("")
+
+        sys.stderr.write("*** ERROR: %s\n" % (err))
+        sys.exit(-1)

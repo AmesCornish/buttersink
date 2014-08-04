@@ -4,7 +4,7 @@
 # Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 .PHONY : all
-all : makestamps/apt makestamps/pip
+all : makestamps/apt makestamps/pip version.txt
 
 makestamps/apt : apt.txt | makestamps
 	sudo apt-get install $$(cat $<)
@@ -23,7 +23,7 @@ clean_setup :
 	rm -r build dist buttersink.egg-info || true
 
 .PHONY : install
-install :
+install : version.txt
 	./setup.py build
 	sudo ./setup.py install
 
@@ -32,34 +32,51 @@ clean : clean_setup
 	rm -r make || true
 
 .PHONY : pypi
-pypi : 
+pypi : version.txt
 	./setup.py bdist upload
+
+makestamps/source : $(shell git ls-files)
+	touch $@
+
+version.txt : .git/index .git/refs/tags makestamps/source
+	if git describe --tags --dirty | grep -q dirty; then \
+		echo $$(git describe --tags --dirty)-$$(date +"%m%d") > $@; \
+	else \
+		echo $$(git describe --tags) > $@; \
+	fi
 
 ##############################################################################
 # Test cases
 
 # To test:
 
-#   make clean_test
-#   make test_backup
-#   make clean_test
-#   make test_restore
+#   make test_full
   
 # OPTS=--dry-run
 # OPTS=--verbose
-EXEC=sudo ./butter_sink.py ${OPTS}
+EXEC=sudo ./buttersink.py ${OPTS}
 TEST_DIR=/mnt/butter/bs-test
 TEST_BUCKET=butter-sink
 
 .PHONY : test_quick
-test_quick :
-	! grep -I '^[^#]*logger\.setLevel(' -r .
-	! grep -I pudb $$(find -name '*.py')
-	python -m doctest buttersink/ioctl.py
+test_quick : makestamps/test_code
 
-.PHONY : test_backup
-test_backup : ${TEST_DIR}/snaps/A ${TEST_DIR}/snaps/B ${TEST_DIR}/snaps/C
-	${EXEC} file://${TEST_DIR}/snaps s3://${TEST_BUCKET}/test/
+DEBUG_CODE=^[^\#]*logger\.setLevel\(|^theDebug = True|pudb
+
+makestamps/test_code : makestamps/source
+	flake8 buttersink
+	! grep -IE "${DEBUG_CODE}" $$(find -name '*.py')
+	python -m doctest buttersink/ioctl.py
+	touch $@
+
+.PHONY : test_full
+test_full : makestamps/test_restore makestamps/test_code
+	@echo "*** All tests passed"
+
+makestamps/test_backup : makestamps/source ${TEST_DIR}/snaps/A ${TEST_DIR}/snaps/B ${TEST_DIR}/snaps/C
+	@read -p "Please delete S3 test buckets, and press <enter> " FOO
+	${EXEC} file://${TEST_DIR}/snaps/ s3://${TEST_BUCKET}/test/
+	touch $@
 
 ${TEST_DIR} :
 	sudo btrfs sub create $@
@@ -79,18 +96,22 @@ ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 clean_test :
 	sudo sync
 	sudo btrfs sub del ${TEST_DIR}/snaps/* || true
+	sudo rm ${TEST_DIR}/snaps/* || true
 	sudo btrfs sub del ${TEST_DIR}/restore/* || true
-	sudo btrfs sub del ${TEST_DIR} || true
+	sudo rm ${TEST_DIR}/restore/* || true
+	rm makestamps/test* || true
 
-.PHONY : test_restore
-test_restore : SNAP=B
-test_restore : | ${TEST_DIR}/restore
-	${EXEC} s3://butter-sink/test/${SNAP} file://${TEST_DIR}/restore
+makestamps/test_restore : SNAP=B
+makestamps/test_restore : makestamps/test_backup | ${TEST_DIR}/restore
+	sudo btrfs sub del ${TEST_DIR}/snaps/* || true
+	sudo btrfs sub del ${TEST_DIR}/restore/* || true
+	sudo rm ${TEST_DIR}/restore/* || true
+	${EXEC} s3://butter-sink/test/${SNAP} file://${TEST_DIR}/restore/
 	sudo sync
 	cd ${TEST_DIR}/restore/${SNAP}; sha256sum --check sha256sum.txt
-	# diff -ur ${TEST_DIR}/snaps ${TEST_DIR}/restore || true
+	touch $@
 
 .PHONY : test_list
 test_list :
 	${EXEC} s3://${TEST_BUCKET}/test/
-	${EXEC} file://${TEST_DIR}/snaps
+	${EXEC} file://${TEST_DIR}/snaps/

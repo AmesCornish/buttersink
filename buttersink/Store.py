@@ -4,13 +4,6 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 """
 
-# sink, source, src, dest: store
-# volume, diff
-
-# Classes: CamelCase
-# files: CamelCase.py
-# project: buttersink
-
 from __future__ import division
 
 import collections
@@ -31,12 +24,27 @@ class Store(object):
 
     """
 
-    ignoreExtraVolumes = True
+    ignoreExtraVolumes = False
 
-    def __init__(self):
+    def __init__(self, userPath, isDest):
         """ Initialize. """
         # { vol: [path] }
         self.paths = collections.defaultdict((lambda: set()))
+
+        # Paths specify a directory containing subvolumes,
+        # unless it's a source path not ending in "/",
+        # then it's a single source subvolume.
+
+        if not (userPath.endswith("/") or isDest):
+            userPath = os.path.dirname(userPath)
+
+        # This will not end with a "/"
+        userPath = os.path.normpath(userPath)
+
+        assert userPath.startswith("/"), userPath
+        self.userPath = userPath
+
+        logger.debug("%s('%s')", self.__class__.__name__, userPath)
 
     def listVolumes(self):
         """ Return list of all volumes in this Store's selected directory. """
@@ -56,7 +64,10 @@ class Store(object):
         The path may be relative or absolute in this Store.
 
         """
-        return next(iter(self.getPaths(volume)))
+        try:
+            return self._fullPath(next(iter(self.getPaths(volume))))
+        except StopIteration:
+            return None
 
     def selectReceivePath(self, paths):
         """ From a set of destination paths, select the best one to receive to.
@@ -67,9 +78,31 @@ class Store(object):
         """
         logger.debug("%s", paths)
         try:
-            return [p for p in paths if not p.startswith("/")][0]
+            return self._fullPath([p for p in paths if not p.startswith("/")][0])
         except IndexError:
             return os.path.basename(list(paths)[0])
+
+    def _fullPath(self, path):
+        if path.startswith("/"):
+            return path
+        if path == ".":
+            return self.userPath
+        return os.path.normpath(os.path.join(self.userPath, path))
+
+    def _relativePath(self, fullPath):
+        if fullPath is None:
+            return None
+
+        assert fullPath.startswith("/"), fullPath
+
+        path = os.path.relpath(fullPath, self.userPath)
+
+        if not path.startswith("../"):
+            return path
+        elif self.ignoreExtraVolumes:
+            return None
+        else:
+            return fullPath
 
     # Abstract methods
 
@@ -111,7 +144,7 @@ class Diff:
         self._sizeIsEstimated = sizeIsEstimated
 
         if self.fromVol is not None and size is not None and not sizeIsEstimated:
-            Diff.theKnownSizes[self.toVol][self.fromVol] = size
+            Diff.theKnownSizes[self.toUUID][self.fromUUID] = size
 
     # {toVolume: {fromVolume: size}}
     theKnownSizes = collections.defaultdict(lambda: collections.defaultdict(lambda: None))
@@ -142,7 +175,7 @@ class Diff:
         if self._size and not self._sizeIsEstimated:
             return
 
-        size = Diff.theKnownSizes[self.toVol][self.fromVol]
+        size = Diff.theKnownSizes[self.toUUID][self.fromUUID]
 
         if size is None:
             return
@@ -188,22 +221,29 @@ class Volume:
 
     def writeInfo(self, stream):
         """ Write information about diffs into a file stream for use later. """
-        for (fromVol, size) in Diff.theKnownSizes[self].iteritems():
-            if size is not None and fromVol is not None:
-                stream.write("%s\t%s\t%d\n" % (
+        for (fromUUID, size) in Diff.theKnownSizes[self.uuid].iteritems():
+            if size is not None and fromUUID is not None:
+                stream.write(str("%s\t%s\t%d\n" % (
                     self.uuid,
-                    fromVol.uuid if fromVol else "<None>",
+                    fromUUID,
                     size,
-                    ))
+                )))
 
-    def readInfo(self, stream):
+    def hasInfo(self):
+        """ Will have information to write. """
+        count = len([None
+                     for (fromUUID, size)
+                     in Diff.theKnownSizes[self.uuid].iteritems()
+                     if size is not None and fromUUID is not None
+                     ])
+        return count > 0
+
+    @staticmethod
+    def readInfo(stream):
         """ Read previously-written information about diffs. """
         for line in stream:
             (toUUID, fromUUID, size) = line.split()
-            if toUUID != self.uuid:
-                logger.warn("Expected UUID=%s, got %s", self.uuid, toUUID)
-                continue
-            Diff.theKnownSizes[self][Volume(fromUUID)] = size
+            Diff.theKnownSizes[toUUID][fromUUID] = size
 
     def __unicode__(self):
         """ Friendly string for volume. """
@@ -291,3 +331,13 @@ def printUUID(uuid):
     if uuid is None:
         return None
     return "%s...%s" % (uuid[:4], uuid[-4:])
+
+
+def skipDryRun(logger, dryRun):
+    """ Print or log command about to be run, and return True if should be skipped. """
+    return _skipRun if dryRun else logger.debug
+
+
+def _skipRun(format, *args):
+    print("WOULD: " + format % args)
+    return True

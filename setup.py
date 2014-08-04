@@ -4,18 +4,24 @@
 
 from setuptools import setup
 
+with open("version.txt", "r") as version:
+    theVersion = version.readline()
+
+with open("README.md", "r") as readme:
+    theReadMe = readme.read()
 
 setup(
     name="buttersink",
-    version="0.1",
+    version=theVersion,
     packages=['buttersink'],
 
     # metadata for upload to PyPI
     author="Ames Cornish",
     author_email="buttersink@montebellopartners.com",
     description="Buttersink is like rsync for btrfs snapshots",
+    long_description=theReadMe,
     license="GPLv3",
-    keywords="btrfs sync synchronize rsync snapshot subvolume buttersink",
+    keywords="btrfs sync synchronize rsync snapshot subvolume buttersink backup",
     url="https://github.com/AmesCornish/buttersink/wiki",
     # could also include long_description, download_url, classifiers, etc.
 
@@ -23,7 +29,11 @@ setup(
         'console_scripts': ['buttersink=buttersink.buttersink:main'],
     },
 
-    requires=['boto', 'dev', 'psutil'],
+    install_requires=['boto', 'dev', 'psutil'],
+
+    package_data={
+        '': ['version.txt'],
+    }
     
     # scripts=['buttersink.py'],
     # package_dir={'buttersink': '..'},

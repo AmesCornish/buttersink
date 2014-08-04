@@ -345,6 +345,7 @@ class Volume(object):
     def _addLink(self, dirTree, dirID, dirSeq, dirPath, name):
         """ Add tree reference and name. (Hardlink). """
         logger.debug("Link  %d-%d-%d '%s%s'", dirTree, dirID, dirSeq, dirPath, name)
+        # assert dirTree != 0, (dirTree, dirID, dirSeq, dirPath, name)
         assert (dirTree, dirID, dirSeq) not in self.links, (dirTree, dirID, dirSeq)
         self.links[(dirTree, dirID, dirSeq)] = (dirPath, name)
         assert len(self.links) == 1, self.links  # Cannot have multiple hardlinks to a directory
@@ -355,8 +356,13 @@ class Volume(object):
         """ Return full butter path from butter root. """
         for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
             path = Volume.volumes[dirTree].fullPath
-            return path + ("/" if path[-1] != "/" else "") + dirPath + name
-        return "/"
+            if path is not None:
+                return path + ("/" if path[-1] != "/" else "") + dirPath + name
+
+        if self.id == BTRFS_FS_TREE_OBJECTID:
+            return "/"
+        else:
+            return None
 
     @property
     def linuxPaths(self):
@@ -374,14 +380,14 @@ class Volume(object):
         return """%4d '%s' (level:%d gen:%d total:%d exclusive:%d%s)
         %s (parent:%s received:%s)
         %s%s""" % (
-            self.id,
+            self.id or -1,
             # ", ".join([dirPath + name for (dirPath, name) in self.links.values()]),
             self.fullPath,
-            self.level,
-            self.current_gen,
+            self.level or -1,
+            self.current_gen or -1,
             # self.size,
-            self.totalSize,
-            self.exclusiveSize,
+            self.totalSize or -1,
+            self.exclusiveSize or -1,
             " ro" if self.readOnly else "",
             self.uuid,
             self.parent_uuid,
@@ -549,7 +555,7 @@ class FileSystem(ioctl.Device):
 
     def _getUsage(self):
         for (header, buf) in self._walkTree(BTRFS_QUOTA_TREE_OBJECTID):
-            logger.debug("%s %s", objectTypeNames[header.type], header)
+            # logger.debug("%s %s", objectTypeNames[header.type], header)
 
             if header.type == objectTypeKeys['BTRFS_QGROUP_INFO_KEY']:
                 data = btrfs_qgroup_info_item.read(buf)
@@ -567,7 +573,7 @@ class FileSystem(ioctl.Device):
             else:
                 data = None
 
-            logger.debug('%s', pretty(data))
+            # logger.debug('%s', pretty(data))
 
     def _getDevInfo(self):
         return self.DEV_INFO(devid=1, uuid="")

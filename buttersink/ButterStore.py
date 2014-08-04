@@ -62,20 +62,15 @@ class ButterStore(Store.Store):
         path is the file system location of the read-only subvolumes.
 
         """
-        super(ButterStore, self).__init__()
+        # Don't lose a trailing slash -- it's significant
+        path = os.path.abspath(path) + "/" if path.endswith("/") else ""
+
+        super(ButterStore, self).__init__(path, isDest)
 
         self.isDest = isDest
-        self.path = os.path.abspath(path)
-        logger.debug("%s", self.path)
 
-        mountPath = self.path
-        # User may have specified a destination subvolume, get the directory
-        if not os.path.exists(mountPath):
-            mountPath = os.path.dirname(mountPath)
-
-        self.mount = mountPath
-        self.butter = Butter.Butter(mountPath)  # subprocess command-line interface
-        self.btrfs = btrfs.FileSystem(mountPath)     # ioctl interface
+        self.butter = Butter.Butter(self.userPath)  # subprocess command-line interface
+        self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
         self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
         # self.volumes = self.butter.listVolumes()
@@ -98,11 +93,17 @@ class ButterStore(Store.Store):
                 if vol is None:
                     continue
 
+                path = bv.fullPath
+
+                if path is None:
+                    logger.warn("Skipping deleted volume %s", bv.uuid)
+                    continue
+
                 # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
                 for path in bv.linuxPaths:
-                    if path.startswith(self.path):
-                        path = path[len(self.path) + 1:]
-                    elif self.ignoreExtraVolumes:
+                    path = self._relativePath(path)
+
+                    if path is None:
                         continue
 
                     logger.debug("%s %s", vol, path)
@@ -114,14 +115,14 @@ class ButterStore(Store.Store):
                 if vol.uuid in self.butterVolumes:
                     logger.warn(
                         "Duplicate effective uuid %s in '%s' and '%s'",
-                        vol.uuid, bv.fullPath, self.butterVolumes[vol.uuid].fullPath
-                        )
+                        vol.uuid, path, self.butterVolumes[vol.uuid].fullPath
+                    )
 
                 self.butterVolumes[vol.uuid] = bv
 
     def __unicode__(self):
         """ English description of self. """
-        return u"btrfs %s" % (self.path)
+        return u"btrfs %s" % (self.userPath)
 
     def __str__(self):
         """ English description of self. """
@@ -167,24 +168,17 @@ class ButterStore(Store.Store):
     def receive(self, diff, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         path = self.selectReceivePath(paths)
-        path = os.path.normpath(os.path.join(os.path.dirname(self.path), path))
-        logger.debug("Receiving '%s'", path)
 
         stream = self.butter.receive(os.path.dirname(path), dryrun)
 
-        if dryrun:
-            return None
-
-        return _Writer(stream, path)
+        return _Writer(stream, path) if stream is not None else None
 
     def receiveVolumeInfo(self, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         path = self.selectReceivePath(paths)
-        path = os.path.normpath(os.path.join(self.path, path))
         path = path + ".bs"
 
-        if dryrun:
-            print("receive to %s" % (path))
+        if Store.skipDryRun(logger, dryrun)("receive to %s", path):
             return None
 
         return open(path, "w")

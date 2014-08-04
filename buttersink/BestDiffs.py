@@ -182,6 +182,11 @@ class BestDiffs:
 
         for node in self.nodes.values():
             node.height = self._height(node)
+            if node.diff is None:
+                logger.error(
+                    "No source diffs for %s",
+                    node.volume.display(sinks[-1], detail="line"),
+                )
 
     def _getNode(self, vol):
         return self.nodes[vol] if vol is not None else None

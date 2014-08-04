@@ -252,7 +252,7 @@ class Buffer:
 
     def view(self, len):
         """ Return a view of the next len bytes. """
-        return memoryview(self.buf)[self.offset:self.offset+len]
+        return memoryview(self.buf)[self.offset:self.offset + len]
 
     @property
     def len(self):
