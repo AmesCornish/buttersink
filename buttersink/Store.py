@@ -36,7 +36,10 @@ class Store(object):
         # then it's a single source subvolume.
 
         if not (userPath.endswith("/") or isDest):
+            self.userVolume = os.path.basename(userPath)
             userPath = os.path.dirname(userPath)
+        else:
+            self.userVolume = None
 
         # This will not end with a "/"
         userPath = os.path.normpath(userPath)
@@ -50,8 +53,11 @@ class Store(object):
         """ Return list of all volumes in this Store's selected directory. """
         for (vol, paths) in self.paths.items():
             for path in paths:
-                if not path.startswith('/'):
-                    yield vol
+                if path.startswith('/'):
+                    continue
+                if self.userVolume is not None and os.path.basename(path) != self.userVolume:
+                    continue
+                yield vol
                 break
 
     def getPaths(self, volume):
