@@ -1,0 +1,58 @@
+#! /bin/sh -e
+#
+# Checksum an entire directory, so copies (e.g.) backups can be verified.
+#
+# This verifies the files, the data, and primary meta-data.
+# Identical directories will give identical *.sha256sum files.
+# Because this hashes every byte of every file, it may take a while.
+#
+# There a two tricky bits to a checksumming a large backup:
+#
+# 1. Common changes we don't care about shouldn't affect the checksum, these include
+#	 - The timezone of the local system
+#	 - User names on the local system
+#	 - Top-level directory timestamp
+#	 - Whether mountpoints exist and/or are mounted
+#	 - The internal order of directory entries
+#
+# 2. If there are differences, it should be easy to track down what files changed, using diff
+#	 - The *.ls and *.files are sorted, and verify one file or directory per line
+#
+# Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+
+if [ $# -lt 1 ]; then
+	echo "Usage: $0 <dir>"
+	return 1
+fi
+
+RUN_DIR=$(readlink --canonicalize "$PWD")
+
+SUM="sha256sum"
+
+for DIR in "$@"; do
+	NAME=$(basename "$DIR")
+	DIR=$(readlink --canonicalize "$DIR")
+
+	if [ "${RUN_DIR##$DIR}" != "$RUN_DIR" ]; then
+		echo "ERROR: Can't output results into $DIR. Please run from a different directory."
+		return 1
+	fi
+
+	cd "$DIR"
+
+	# This is designed to print immutable attributes of directory entries
+	# The top level directory is recreated on receive, so is not immutable.
+	# Mountpoints are deleted by btrfs send and receive, so they are not immutable, 
+	# nor are the directories that contain them.
+	FMT="%M %n %4U %4G %TY-%Tm-%Td %TT %P\n"
+	TZ=UTC find -not -path "." -not \( -type d -execdir mountpoint -q {} \; \) -printf "$FMT" | \
+		sort --key 7 > "$RUN_DIR/$NAME.ls"
+
+	find -type f -exec $SUM {} \; | \
+		sort --key 2 > "$RUN_DIR/$NAME.files"
+
+	cd "$RUN_DIR"
+
+	$SUM "$NAME".ls "$NAME".files > "$NAME.$SUM"
+done
+

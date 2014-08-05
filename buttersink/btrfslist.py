@@ -21,7 +21,7 @@ theDisplayFormat = '%(message)s'
 theDebugDisplayFormat = (
     '%(levelname)7s:'
     '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
-    )
+)
 
 logging.basicConfig(format=theDebugDisplayFormat, level='INFO')
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ command.add_argument('dir', metavar='<dir>',
 def main():
     """ Main program. """
     args = command.parse_args()
-        
+
     with btrfs.FileSystem(args.dir) as mount:
         # mount.rescanSizes()
 
@@ -55,7 +55,7 @@ def main():
         pprint.pprint(dInfo)
 
         for vol in mount.subvolumes:
-                print vol
+            print vol
 
     return 0
 

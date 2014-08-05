@@ -35,11 +35,12 @@ except IOError:
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
     epilog="""
-<src>, <dst>:   file:///path/to/directory/[snapshot]
+<src>, <dst>:   [file://]/path/to/directory/[snapshot]
                 ssh://[user@]host/path/to/directory (Not implemented)
                 s3://bucket/prefix/[snapshot]
 
-If only <dst> is supplied, just list available snapshots.
+If only <dst> is supplied, just list available snapshots.  The trailing "/"
+on a <src> *is* significant.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 See README.md and LICENSE.txt for more info.
@@ -56,7 +57,7 @@ command.add_argument('-n', '--dry-run', action="store_true",
                      help="display what would be transferred, but don't do it",
                      )
 command.add_argument('-d', '--delete', action="store_true",
-                     help='delete any snapshots in <dst> that are not in <src>',
+                     help='delete any snapshots in <dst> that are not in <src> (Not implemented)',
                      )
 
 command.add_argument('-q', '--quiet', action="count", default=0,

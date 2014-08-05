@@ -5,7 +5,7 @@
 from setuptools import setup
 
 with open("version.txt", "r") as version:
-    theVersion = version.readline()
+    theVersion = version.readline().strip()
 
 with open("README.md", "r") as readme:
     theReadMe = readme.read()
@@ -29,13 +29,14 @@ setup(
         'console_scripts': ['buttersink=buttersink.buttersink:main'],
     },
 
-    install_requires=['boto', 'dev', 'psutil'],
+    install_requires=['boto', 'psutil'],
 
     package_data={
-        '': ['version.txt'],
-    }
+        '': ['../version.txt', '../README.md', '../LICENSE.txt'],
+    },
     
-    # scripts=['buttersink.py'],
+    scripts=['scripts/checksumdir'],
+
     # package_dir={'buttersink': '..'},
     # include_package_data=True,
 

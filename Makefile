@@ -33,7 +33,7 @@ clean : clean_setup
 
 .PHONY : pypi
 pypi : version.txt
-	./setup.py bdist upload
+	./setup.py bdist sdist upload
 
 makestamps/source : $(shell git ls-files)
 	touch $@
@@ -44,6 +44,7 @@ version.txt : .git/index .git/refs/tags makestamps/source
 	else \
 		echo $$(git describe --tags) > $@; \
 	fi
+	cat $@
 
 ##############################################################################
 # Test cases
@@ -60,6 +61,7 @@ TEST_BUCKET=butter-sink
 
 .PHONY : test_quick
 test_quick : makestamps/test_code
+	@echo "*** Quick tests passed"
 
 DEBUG_CODE=^[^\#]*logger\.setLevel\(|^theDebug = True|pudb
 
@@ -73,7 +75,7 @@ makestamps/test_code : makestamps/source
 test_full : makestamps/test_restore makestamps/test_code
 	@echo "*** All tests passed"
 
-makestamps/test_backup : makestamps/source ${TEST_DIR}/snaps/A ${TEST_DIR}/snaps/B ${TEST_DIR}/snaps/C
+makestamps/test_backup : makestamps/source $(addprefix ${TEST_DIR}/snaps/,A B C)
 	@read -p "Please delete S3 test buckets, and press <enter> " FOO
 	${EXEC} file://${TEST_DIR}/snaps/ s3://${TEST_BUCKET}/test/
 	touch $@
@@ -92,22 +94,28 @@ ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 	sudo btrfs sub snap -r ${TEST_DIR} $@
 	cd $@; sha256sum --check sha256sum.txt
 
-.PHONY : clean_test
-clean_test :
+define TEST_CLEAN
 	sudo sync
 	sudo btrfs sub del ${TEST_DIR}/snaps/* || true
 	sudo rm ${TEST_DIR}/snaps/* || true
 	sudo btrfs sub del ${TEST_DIR}/restore/* || true
 	sudo rm ${TEST_DIR}/restore/* || true
+	sudo rm ${TEST_DIR}/*.dat ${TEST_DIR}/sha256sum.txt || true
+endef
+
+.PHONY : clean_test
+clean_test :
+	${CLEAN_TEST}
 	rm makestamps/test* || true
 
 makestamps/test_restore : SNAP=B
 makestamps/test_restore : makestamps/test_backup | ${TEST_DIR}/restore
-	sudo btrfs sub del ${TEST_DIR}/snaps/* || true
-	sudo btrfs sub del ${TEST_DIR}/restore/* || true
-	sudo rm ${TEST_DIR}/restore/* || true
+	$(TEST_CLEAN)
+	sudo sync
 	${EXEC} s3://butter-sink/test/${SNAP} file://${TEST_DIR}/restore/
 	sudo sync
+	# Check that not *all* snapshots were restored
+	! ls -d $(addprefix ${TEST_DIR}/restore/,A B C)
 	cd ${TEST_DIR}/restore/${SNAP}; sha256sum --check sha256sum.txt
 	touch $@
 

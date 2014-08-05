@@ -274,7 +274,7 @@ class Control:
         """ Execute the call. """
         if device.fd is None:
             raise Exception("Device hasn't been successfully opened.  Use 'with' statement.")
-            
+
         if self.structure is not None:
             args = self.structure.write(args)
             # log.write(args)
