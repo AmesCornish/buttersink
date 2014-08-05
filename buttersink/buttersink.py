@@ -186,16 +186,16 @@ def main():
 
             diff.sink.send(diff, streamContext, progress=progress, dryrun=args.dry_run)
 
-        # TODO: For symmetry, put this into the streamContext.__exit__ method
+            # TODO: For symmetry, put this into the streamContext.__exit__ method
 
-        if vol.hasInfo():
-            infoContext = dest.receiveVolumeInfo(paths, dryrun=args.dry_run)
+            if vol.hasInfo():
+                infoContext = dest.receiveVolumeInfo(paths, dryrun=args.dry_run)
 
-            if args.dry_run:
-                vol.writeInfo(sys.stdout)
-            else:
-                with infoContext as stream:
-                    vol.writeInfo(stream)
+                if args.dry_run:
+                    vol.writeInfo(sys.stdout)
+                else:
+                    with infoContext as stream:
+                        vol.writeInfo(stream)
 
     return 0
 

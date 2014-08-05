@@ -29,6 +29,9 @@ if True:  # Imports and constants
         # This does transparent S3 server-side encryption
         isEncrypted = True
 
+        # Minimum chuck size is 5M.
+        theInfoBufferSize = 10 * (1 << 20)
+
         logger = logging.getLogger(__name__)
 
 # logger.setLevel('DEBUG')
@@ -137,7 +140,7 @@ class S3Store(Store.Store):
         if Store.skipDryRun(logger, dryrun)("receive info in '%s'", path):
             return None
 
-        return _Uploader(self.bucket, path)
+        return io.BufferedWriter(_Uploader(self.bucket, path), buffer_size=theInfoBufferSize)
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
