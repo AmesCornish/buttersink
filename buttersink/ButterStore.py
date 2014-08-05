@@ -67,13 +67,15 @@ class ButterStore(Store.Store):
 
         super(ButterStore, self).__init__(path, isDest)
 
+        if not os.path.isdir(self.userPath):
+            raise Exception("'%s' is not an existing directory" % (self.userPath))
+
         self.isDest = isDest
 
-        self.butter = Butter.Butter(self.userPath)  # subprocess command-line interface
+        self.butter = Butter.Butter()  # subprocess command-line interface
         self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
         self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
-        # self.volumes = self.butter.listVolumes()
         self._fillVolumesAndPaths()
 
     def _btrfsVol2StoreVol(self, bvol):
@@ -119,6 +121,10 @@ class ButterStore(Store.Store):
                     )
 
                 self.butterVolumes[vol.uuid] = bv
+
+    def _fileSystemSync(self):
+        with self.btrfs as mount:
+            mount.SYNC()
 
     def __unicode__(self):
         """ English description of self. """
@@ -167,6 +173,9 @@ class ButterStore(Store.Store):
 
     def receive(self, diff, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
+        if not dryrun:
+            self._fileSystemSync()
+
         path = self.selectReceivePath(paths)
 
         stream = self.butter.receive(os.path.dirname(path), dryrun)
@@ -225,4 +234,13 @@ class ButterStore(Store.Store):
 
     def send(self, diff, streamContext, progress=True, dryrun=False):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
-        self.butter.send(diff.toUUID, diff.fromUUID, streamContext, progress, dryrun)
+        if not dryrun:
+            self._fileSystemSync()
+
+        self.butter.send(
+            self.getSendPath(diff.toVol),
+            self.getSendPath(diff.fromVol),
+            streamContext,
+            progress,
+            dryrun
+        )

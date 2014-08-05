@@ -79,14 +79,14 @@ class Store(object):
         """ From a set of destination paths, select the best one to receive to.
 
         The paths are relative or absolute, in a source Store.
-        The result will be relative, suitable for this destination Store.
+        The result will be absolute, suitable for this destination Store.
 
         """
         logger.debug("%s", paths)
         try:
             return self._fullPath([p for p in paths if not p.startswith("/")][0])
         except IndexError:
-            return os.path.basename(list(paths)[0])
+            return self._fullPath(os.path.basename(list(paths)[0]))
 
     def _fullPath(self, path):
         if path.startswith("/"):
@@ -284,23 +284,6 @@ class Volume:
         )
 
         return vol + size
-
-    @staticmethod
-    def getPath(node):
-        """ Return printable description of node, if not None. """
-        if node is None:
-            return None
-        uuid = node.uuid
-        return node._getPath(uuid)
-
-    def _getPath(self, uuid):
-        """ Return printable description of uuid. """
-        result = Store.printUUID(uuid)
-        try:
-            result = "%s (%s)" % (self.diffSink.getVolume(uuid)['path'], result)
-        except (KeyError, AttributeError):
-            pass
-        return result
 
     @classmethod
     def make(cls, vol):

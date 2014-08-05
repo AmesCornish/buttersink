@@ -501,7 +501,7 @@ class FileSystem(ioctl.Device):
             if results == 0:
                 break
 
-            for i in xrange(results):
+            for _ in xrange(results):
                 assert buf.len >= btrfs_ioctl_search_header.size, buf.len
                 data = buf.read(btrfs_ioctl_search_header)
 

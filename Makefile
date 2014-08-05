@@ -72,10 +72,11 @@ makestamps/test_code : makestamps/source
 	touch $@
 
 .PHONY : test_full
-test_full : makestamps/test_restore makestamps/test_code
+test_full : makestamps/test_code makestamps/test_restore
 	@echo "*** All tests passed"
 
-makestamps/test_backup : makestamps/source $(addprefix ${TEST_DIR}/snaps/,A B C)
+.INTERMEDIATE : $(addprefix ${TEST_DIR}/snaps/,A B C)
+makestamps/test_backup : $(addprefix ${TEST_DIR}/snaps/,A B C)
 	@read -p "Please delete S3 test buckets, and press <enter> " FOO
 	${EXEC} file://${TEST_DIR}/snaps/ s3://${TEST_BUCKET}/test/
 	touch $@
@@ -94,7 +95,7 @@ ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 	sudo btrfs sub snap -r ${TEST_DIR} $@
 	cd $@; sha256sum --check sha256sum.txt
 
-define TEST_CLEAN
+define CLEAN_TEST
 	sudo sync
 	sudo btrfs sub del ${TEST_DIR}/snaps/* || true
 	sudo rm ${TEST_DIR}/snaps/* || true
@@ -106,11 +107,11 @@ endef
 .PHONY : clean_test
 clean_test :
 	${CLEAN_TEST}
-	rm makestamps/test* || true
+	rm makestamps/test_* || true
 
 makestamps/test_restore : SNAP=B
 makestamps/test_restore : makestamps/test_backup | ${TEST_DIR}/restore
-	$(TEST_CLEAN)
+	$(CLEAN_TEST)
 	sudo sync
 	${EXEC} s3://butter-sink/test/${SNAP} file://${TEST_DIR}/restore/
 	sudo sync

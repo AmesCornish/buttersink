@@ -179,21 +179,6 @@ class S3Store(Store.Store):
         if progress:
             sys.stdout.write("\n")
 
-    def _upload(self, stream, keyName):
-        # key = self.bucket.get_key(keyName)
-        # key = self.bucket.new_key(keyName)
-
-        # set_contents_from_stream is not supported for S3
-        # key.set_contents_from_stream(stream, replace=False, cb=displayProgress, size=1000)
-        # key.set_contents_from_filename(fileName, replace=False, cb=displayProgress)
-
-        with _Uploader(self.bucket, keyName) as uploader:
-            while True:
-                data = stream.read(theChunkSize)
-                if not data:
-                    break
-                uploader.upload(data)
-
 
 class _DisplayProgress:
 
