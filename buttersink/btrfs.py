@@ -366,12 +366,16 @@ class Volume(object):
 
     @property
     def linuxPaths(self):
-        """ Return full paths from linux root. """
-        if self.fullPath in Volume.mounts:
-            yield Volume.mounts[self.fullPath]
+        """ Return full paths from linux root.
+
+        The first path returned will be the path through the top-most mount.
+        (Usually the root).
+        """
         for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
             for path in Volume.volumes[dirTree].linuxPaths:
                 yield path + "/" + dirPath + name
+        if self.fullPath in Volume.mounts:
+            yield Volume.mounts[self.fullPath]
 
     def __str__(self):
         """ String representation. """

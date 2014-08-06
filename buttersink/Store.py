@@ -29,7 +29,10 @@ class Store(object):
     def __init__(self, userPath, isDest):
         """ Initialize. """
         # { vol: [path] }
-        self.paths = collections.defaultdict((lambda: set()))
+        # The order of the paths is important to work around btrfs bugs.
+        # The first path is usually the root-volume mounted path,
+        # which is required by btrfs 3.14.2.
+        self.paths = collections.defaultdict((lambda: []))
 
         # Paths specify a directory containing subvolumes,
         # unless it's a source path not ending in "/",
@@ -194,8 +197,8 @@ class Diff:
         return u"%s from %s (%s%s) in %s" % (
             self.toVol.display(self.sink),
             self.fromVol.display(self.sink) if self.fromVol else "<None>",
+            "~" if self.sizeIsEstimated else "",
             humanize(self.size),
-            "-e" if self.sizeIsEstimated else "",
             self.sink,
         )
 

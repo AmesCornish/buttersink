@@ -10,9 +10,19 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 import Store
 
+import collections
 import logging
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
+
+
+class Bunch(object):
+
+    """ Simple mutable data record. """
+
+    def __init__(self, **kwds):
+        """ Initialize. """
+        self.__dict__.update(kwds)
 
 
 class _Node:
@@ -54,20 +64,23 @@ class _Node:
 
     @staticmethod
     def summary(nodes):
-        count = 0
-        size = 0
-        sinks = {}
+        sinks = collections.defaultdict(lambda: Bunch(count=0, size=0))
+
+        total = sinks[None]
+
         for n in nodes:
-            count += 1
+            total.count += 1
 
-            if n.diff is not None:
-                size += n.diff.size
-                if n.diff.sink in sinks:
-                    sinks[n.diff.sink] += n.diff.size
-                else:
-                    sinks[n.diff.sink] = n.diff.size
+            if n.diff is None:
+                continue
 
-        return {"count": count, "size": size, "sinks": sinks}
+            total.size += n.diff.size
+
+            sink = sinks[n.diff.sink]
+            sink.count += 1
+            sink.size += n.diff.size
+
+        return sinks
 
 
 class BestDiffs:

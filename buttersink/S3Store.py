@@ -109,7 +109,7 @@ class S3Store(Store.Store):
             logger.debug("Adding %s in %s", diff, path)
 
             self.diffs[diff.fromVol].append(diff)
-            self.paths[diff.toVol].add(path)
+            self.paths[diff.toVol].append(path)
 
         # logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
         # logger.debug("Vols:\n%s", pprint.pformat(self.vols))

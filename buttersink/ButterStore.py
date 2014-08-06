@@ -63,7 +63,7 @@ class ButterStore(Store.Store):
 
         """
         # Don't lose a trailing slash -- it's significant
-        path = os.path.abspath(path) + "/" if path.endswith("/") else ""
+        path = os.path.abspath(path) + ("/" if path.endswith("/") else "")
 
         super(ButterStore, self).__init__(path, isDest)
 
@@ -109,7 +109,7 @@ class ButterStore(Store.Store):
                         continue
 
                     logger.debug("%s %s", vol, path)
-                    self.paths[vol].add(path)
+                    self.paths[vol].append(path)
 
                 if vol not in self.paths:
                     continue

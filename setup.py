@@ -32,9 +32,9 @@ setup(
     install_requires=['boto', 'psutil'],
 
     package_data={
-        '': ['../version.txt', '../README.md', '../LICENSE.txt'],
+        '': ['version.txt', 'README.md', 'LICENSE.txt'],
     },
-    
+
     scripts=['scripts/checksumdir'],
 
     # package_dir={'buttersink': '..'},

@@ -11,6 +11,7 @@ if True:  # Headers
 
         import argparse
         import logging
+        import os.path
         import re
         import sys
 
@@ -24,7 +25,7 @@ theDebug = False
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
-theVersionFile = "version.txt"
+theVersionFile = os.path.join(os.path.dirname(__file__), "version.txt")
 try:
     with open(theVersionFile) as version:
         theVersion = version.readline()
@@ -88,11 +89,11 @@ def _setupLogging(quietLevel, logFile):
     theDebugDisplayFormat = (
         '%(levelname)7s:'
         '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
-        )
+    )
     theLogFormat = (
         '%(asctime)-15s: %(levelname)7s:'
         '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
-        )
+    )
 
     root = logging.getLogger()
     root.setLevel("INFO" if theDebug else "DEBUG")  # When debugging, this is handled per-logger
@@ -166,10 +167,13 @@ def main():
     best.analyze(source, dest)
 
     summary = best.summary()
-    logger.info("Optimal synchronization: %d diffs, %s total",
-                summary["count"], Store.humanize(summary["size"]))
-    for sink, size in summary["sinks"].items():
-        logger.info("%s from %s", Store.humanize(size), sink)
+    logger.info("Optimal synchronization:")
+    for sink, values in summary.items():
+        logger.info("%s from %d diffs in %s",
+                    Store.humanize(values.size),
+                    values.count,
+                    sink or "TOTAL",
+                    )
 
     for diff in best.iterDiffs():
         if diff is None:
@@ -200,11 +204,4 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as err:
-        if theDebug:
-            logger.exception("")
-
-        sys.stderr.write("*** ERROR: %s\n" % (err))
-        sys.exit(-1)
+    sys.exit(main())
