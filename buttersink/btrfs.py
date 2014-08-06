@@ -13,7 +13,7 @@ import ioctl
 import logging
 import pprint
 logger = logging.getLogger(__name__)
-# logger.setLevel('DEBUG')
+logger.setLevel('DEBUG')
 
 
 def pretty(obj):
@@ -432,11 +432,18 @@ class FileSystem(ioctl.Device):
         volumes.sort(key=(lambda v: v.fullPath))
         return volumes
 
-    def rescanSizes(self):
+    def _rescanSizes(self, force=True):
         """ Zero and recalculate quota sizes to subvolume sizes will be correct. """
-        self.QUOTA_CTL(cmd=BTRFS_QUOTA_CTL_ENABLE)
-        self.QUOTA_RESCAN()
-        logger.info("Waiting for btrfs rescan...")
+        status = self.QUOTA_CTL(cmd=BTRFS_QUOTA_CTL_ENABLE).status
+        logger.debug("Status: %s", hex(status))
+
+        status = self.QUOTA_RESCAN_STATUS()
+        logger.debug("Status: %s", status)
+
+        if not status.flags:
+            self.QUOTA_RESCAN()
+
+        logger.warn("Waiting for btrfs quota usage scan...")
         self.QUOTA_RESCAN_WAIT()
 
     def _getMounts(self):
@@ -558,6 +565,13 @@ class FileSystem(ioctl.Device):
                     )
 
     def _getUsage(self):
+        try:
+            self._unsafeGetUsage()
+        except IOError:
+            self._rescanSizes()
+            self._unsafeGetUsage()
+
+    def _unsafeGetUsage(self):
         for (header, buf) in self._walkTree(BTRFS_QUOTA_TREE_OBJECTID):
             # logger.debug("%s %s", objectTypeNames[header.type], header)
 
@@ -595,9 +609,10 @@ class FileSystem(ioctl.Device):
     DEFAULT_SUBVOL = Control.IOW(19, volid_struct)
     DEV_INFO = Control.IOWR(30, btrfs_ioctl_dev_info_args)
     FS_INFO = Control.IOR(31, btrfs_ioctl_fs_info_args)
-    QUOTA_RESCAN = Control.IOW(44, btrfs_ioctl_quota_rescan_args)
-    QUOTA_RESCAN_WAIT = Control.IO(46)
     QUOTA_CTL = Control.IOWR(40, btrfs_ioctl_quota_ctl_args)
+    QUOTA_RESCAN = Control.IOW(44, btrfs_ioctl_quota_rescan_args)
+    QUOTA_RESCAN_STATUS = Control.IOR(45, btrfs_ioctl_quota_rescan_args)
+    QUOTA_RESCAN_WAIT = Control.IO(46)
 
 # define BTRFS_IOC_DEFAULT_SUBVOL _IOW(BTRFS_IOCTL_MAGIC, 19, __u64)
 # define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
@@ -607,5 +622,3 @@ class FileSystem(ioctl.Device):
 # define BTRFS_IOC_SET_RECEIVED_SUBVOL _IOWR(BTRFS_IOCTL_MAGIC, 37, \
 #                 struct btrfs_ioctl_received_subvol_args)
 # define BTRFS_IOC_SEND _IOW(BTRFS_IOCTL_MAGIC, 38, struct btrfs_ioctl_send_args)
-# define BTRFS_IOC_QUOTA_RESCAN_STATUS _IOR(BTRFS_IOCTL_MAGIC, 45, \
-#                    struct btrfs_ioctl_quota_rescan_args)

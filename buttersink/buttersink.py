@@ -20,7 +20,7 @@ if True:  # Headers
         import S3Store
         import Store
 
-theDebug = False
+theDebug = True
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
