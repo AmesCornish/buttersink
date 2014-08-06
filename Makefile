@@ -72,7 +72,7 @@ makestamps/test_code : makestamps/source
 	touch $@
 
 .PHONY : test_full
-test_full : makestamps/test_code makestamps/test_restore
+test_full : makestamps/test_restore makestamps/test_code
 	@echo "*** All tests passed"
 
 .INTERMEDIATE : $(addprefix ${TEST_DIR}/snaps/,A B C)

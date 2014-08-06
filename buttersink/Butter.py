@@ -57,8 +57,8 @@ class Butter:
 
         return btrfsVersionString
 
-    def receive(self, directory, dryrun=False):
-        """ Return a file-like (stream) object to store a diff. """
+    def processReceive(self, directory, dryrun=False):
+        """ Return a process that will store a diff. """
         cmd = ["btrfs", "receive", directory]
 
         if Store.skipDryRun(logger, dryrun)("Command: %s", cmd):
@@ -69,7 +69,7 @@ class Butter:
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return process.stdin
+        return process
 
     def send(self, targetPath, parent, streamContext, progress=True, dryrun=False):
         """ Write a (incremental) snapshot to the stream context manager. """

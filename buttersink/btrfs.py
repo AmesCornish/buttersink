@@ -435,10 +435,10 @@ class FileSystem(ioctl.Device):
     def _rescanSizes(self, force=True):
         """ Zero and recalculate quota sizes to subvolume sizes will be correct. """
         status = self.QUOTA_CTL(cmd=BTRFS_QUOTA_CTL_ENABLE).status
-        logger.debug("Status: %s", hex(status))
+        logger.debug("CTL Status: %s", hex(status))
 
         status = self.QUOTA_RESCAN_STATUS()
-        logger.debug("Status: %s", status)
+        logger.debug("RESCAN Status: %s", status)
 
         if not status.flags:
             self.QUOTA_RESCAN()

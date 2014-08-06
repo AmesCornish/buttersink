@@ -25,8 +25,9 @@ class _Writer:
 
     """ Context Manager to write a snapshot. """
 
-    def __init__(self, stream, path):
-        self.stream = stream
+    def __init__(self, process, path):
+        self.process = process
+        self.stream = process.stdin
         self.path = path
 
     def __enter__(self):
@@ -35,20 +36,27 @@ class _Writer:
     def __exit__(self, exceptionType, exception, trace):
         self.stream.__exit__(exceptionType, exception, trace)
 
+        logger.debug("Waiting for receive process...")
+        self.process.wait()
+
+        if exception is None and self.process.returncode == 0:
+            return
+
+        if os.path.exists(self.path):
+            # This tries to mark partial (failed) transfers.
+
+            partial = self.path + ".part"
+
+            if os.path.exists(partial):
+                partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
+
+            os.rename(self.path, partial)
+
         if exception is None:
-            return
-
-        if not os.path.exists(self.path):
-            return
-
-        # This tries to mark partial (failed) transfers.
-
-        partial = self.path + ".part"
-
-        if os.path.exists(partial):
-            partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
-
-        os.rename(self.path, partial)
+            raise Exception(
+                "receive returned error %d. %s may be corrupt."
+                % (self.process.returncode, self.path)
+                )
 
 
 class ButterStore(Store.Store):
@@ -178,9 +186,9 @@ class ButterStore(Store.Store):
 
         path = self.selectReceivePath(paths)
 
-        stream = self.butter.receive(os.path.dirname(path), dryrun)
+        process = self.butter.processReceive(os.path.dirname(path), dryrun)
 
-        return _Writer(stream, path) if stream is not None else None
+        return _Writer(process, path) if process is not None else None
 
     def receiveVolumeInfo(self, paths, dryrun=False):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
