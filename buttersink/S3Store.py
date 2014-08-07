@@ -41,14 +41,14 @@ class S3Store(Store.Store):
 
     """ An S3 bucket synchronization source or sink. """
 
-    def __init__(self, host, path, isDest):
+    def __init__(self, host, path, isDest, dryrun):
         """ Initialize.
 
         host is the bucket name.
         path is an object key prefix to use.
 
         """
-        super(S3Store, self).__init__("/" + path, isDest)
+        super(S3Store, self).__init__("/" + path, isDest, dryrun)
 
         self.isDest = isDest
 
@@ -68,6 +68,7 @@ class S3Store(Store.Store):
             raise
 
         self.bucket = s3.get_bucket(self.bucketName)
+        self._flushPartialUploads()
         self._fillVolumesAndPaths()
 
     def __unicode__(self):
@@ -77,6 +78,14 @@ class S3Store(Store.Store):
     def __str__(self):
         """ Return text description. """
         return unicode(self).encode('utf-8')
+
+    def _flushPartialUploads(self):
+        for upload in self.bucket.get_all_multipart_uploads():
+            if self.dryrun:
+                logger.warn("Old partial upload: %s", upload)
+            else:
+                logger.warn("Cancelling old partial upload: %s", upload)
+                upload.cancel_upload()
 
     def _fillVolumesAndPaths(self):
         """ Fill in self.paths. """
@@ -122,22 +131,22 @@ class S3Store(Store.Store):
         """ Test whether edge is in this sink. """
         return diff.toVol in [d.toVol for d in self.diffs[diff.fromVol]]
 
-    def receive(self, diff, paths, dryrun=False):
+    def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         path = self.selectReceivePath(paths)
         keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
 
-        if Store.skipDryRun(logger, dryrun)("receive %s in %s", keyName, self):
+        if self._skipDryRun(logger)("receive %s in %s", keyName, self):
             return None
 
         return _Uploader(self.bucket, keyName)
 
-    def receiveVolumeInfo(self, paths, dryrun=False):
+    def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         path = self.selectReceivePath(paths)
         path = path + ".bs"
 
-        if Store.skipDryRun(logger, dryrun)("receive info in '%s'", path):
+        if self._skipDryRun(logger)("receive info in '%s'", path):
             return None
 
         return io.BufferedWriter(_Uploader(self.bucket, path), buffer_size=theInfoBufferSize)
@@ -161,13 +170,13 @@ class S3Store(Store.Store):
 
         return match
 
-    def send(self, diff, streamContext, progress=True, dryrun=False):
+    def send(self, diff, streamContext, progress=True):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         path = self.getSendPath(diff.toVol)
         keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
         key = self.bucket.get_key(keyName)
 
-        if Store.skipDryRun(logger, dryrun)("send %s in %s", keyName, self):
+        if self._skipDryRun(logger)("send %s in %s", keyName, self):
             return
 
         with streamContext as stream:

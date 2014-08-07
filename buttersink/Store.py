@@ -26,7 +26,7 @@ class Store(object):
 
     ignoreExtraVolumes = False
 
-    def __init__(self, userPath, isDest):
+    def __init__(self, userPath, isDest, dryrun):
         """ Initialize. """
         # { vol: [path] }
         # The order of the paths is important to work around btrfs bugs.
@@ -51,6 +51,8 @@ class Store(object):
         self.userPath = userPath
 
         logger.debug("%s('%s')", self.__class__.__name__, userPath)
+
+        self.dryrun = dryrun
 
     def listVolumes(self):
         """ Return list of all volumes in this Store's selected directory. """
@@ -113,6 +115,9 @@ class Store(object):
         else:
             return fullPath
 
+    def _skipDryRun(self, logger):
+        return skipDryRun(logger, self.dryrun)
+
     # Abstract methods
 
     def _fillVolumesAndPaths(self):
@@ -127,15 +132,15 @@ class Store(object):
         """ True if Store already contains this edge. """
         raise NotImplementedError
 
-    def receive(self, diff, paths, dryrun=False):
+    def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         raise NotImplementedError
 
-    def send(self, diff, streamContext, progress=True, dryrun=False):
+    def send(self, diff, streamContext, progress=True):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         raise NotImplementedError
 
-    def receiveVolumeInfo(self, paths, dryrun=False):
+    def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         raise NotImplementedError
 

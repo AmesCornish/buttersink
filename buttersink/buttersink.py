@@ -20,7 +20,7 @@ if True:  # Headers
         import S3Store
         import Store
 
-theDebug = True
+theDebug = False
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
@@ -112,7 +112,7 @@ def _setupLogging(quietLevel, logFile):
         add(logging.StreamHandler(logFile), "DEBUG", theLogFormat)
 
 
-def parseSink(uri, isDest):
+def parseSink(uri, isDest, dryrun):
     """ Parse command-line description of sink into a sink object. """
     if uri is None:
         return None
@@ -139,7 +139,7 @@ def parseSink(uri, isDest):
         # 'ssh': SSHStore.SSHStore,
     }
 
-    return Sinks[parts['method']](parts['host'], parts['path'], isDest)
+    return Sinks[parts['method']](parts['host'], parts['path'], isDest, dryrun)
 
 
 def main():
@@ -152,9 +152,9 @@ def main():
 
     progress = args.quiet == 0
 
-    source = parseSink(args.source, False)
+    source = parseSink(args.source, False, args.dry_run)
 
-    dest = parseSink(args.dest, source is not None)
+    dest = parseSink(args.dest, source is not None, args.dry_run)
 
     if source is None:
         for vol in dest.listVolumes():
@@ -186,14 +186,14 @@ def main():
         paths = diff.sink.getPaths(vol)
 
         if diff.sink != dest:
-            streamContext = dest.receive(diff, paths, dryrun=args.dry_run)
+            streamContext = dest.receive(diff, paths)
 
-            diff.sink.send(diff, streamContext, progress=progress, dryrun=args.dry_run)
+            diff.sink.send(diff, streamContext, progress=progress)
 
             # TODO: For symmetry, put this into the streamContext.__exit__ method
 
             if vol.hasInfo():
-                infoContext = dest.receiveVolumeInfo(paths, dryrun=args.dry_run)
+                infoContext = dest.receiveVolumeInfo(paths)
 
                 if args.dry_run:
                     vol.writeInfo(sys.stdout)

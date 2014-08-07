@@ -13,7 +13,7 @@ import ioctl
 import logging
 import pprint
 logger = logging.getLogger(__name__)
-logger.setLevel('DEBUG')
+# logger.setLevel('DEBUG')
 
 
 def pretty(obj):

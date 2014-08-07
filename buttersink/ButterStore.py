@@ -63,7 +63,7 @@ class ButterStore(Store.Store):
 
     """ A local btrfs synchronization source or sink. """
 
-    def __init__(self, host, path, isDest):
+    def __init__(self, host, path, isDest, dryrun):
         """ Initialize.
 
         host is ignored.
@@ -73,14 +73,14 @@ class ButterStore(Store.Store):
         # Don't lose a trailing slash -- it's significant
         path = os.path.abspath(path) + ("/" if path.endswith("/") else "")
 
-        super(ButterStore, self).__init__(path, isDest)
+        super(ButterStore, self).__init__(path, isDest, dryrun)
 
         if not os.path.isdir(self.userPath):
             raise Exception("'%s' is not an existing directory" % (self.userPath))
 
         self.isDest = isDest
 
-        self.butter = Butter.Butter()  # subprocess command-line interface
+        self.butter = Butter.Butter(dryrun)  # subprocess command-line interface
         self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
         self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
@@ -179,23 +179,23 @@ class ButterStore(Store.Store):
         """ True if Store already contains this edge. """
         return diff.toUUID in self.butterVolumes and diff.fromUUID in self.butterVolumes
 
-    def receive(self, diff, paths, dryrun=False):
+    def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
-        if not dryrun:
+        if not self.dryrun:
             self._fileSystemSync()
 
         path = self.selectReceivePath(paths)
 
-        process = self.butter.processReceive(os.path.dirname(path), dryrun)
+        process = self.butter.processReceive(os.path.dirname(path))
 
         return _Writer(process, path) if process is not None else None
 
-    def receiveVolumeInfo(self, paths, dryrun=False):
+    def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         path = self.selectReceivePath(paths)
         path = path + ".bs"
 
-        if Store.skipDryRun(logger, dryrun)("receive to %s", path):
+        if Store.skipDryRun(logger, self.dryrun)("receive to %s", path):
             return None
 
         return open(path, "w")
@@ -240,9 +240,9 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, diff, streamContext, progress=True, dryrun=False):
+    def send(self, diff, streamContext, progress=True):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
-        if not dryrun:
+        if not self.dryrun:
             self._fileSystemSync()
 
         self.butter.send(
@@ -250,5 +250,4 @@ class ButterStore(Store.Store):
             self.getSendPath(diff.fromVol),
             streamContext,
             progress,
-            dryrun
         )

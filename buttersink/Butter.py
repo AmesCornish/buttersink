@@ -30,9 +30,10 @@ class Butter:
 
     """ Interface to local btrfs file system snapshots. """
 
-    def __init__(self):
+    def __init__(self, dryrun):
         """ Initialize. """
         self.btrfsVersion = self._getVersion([3, 14])
+        self.dryrun = dryrun
 
     def _getVersion(self, minVersion):
         btrfsVersionString = subprocess.check_output(
@@ -57,11 +58,11 @@ class Butter:
 
         return btrfsVersionString
 
-    def processReceive(self, directory, dryrun=False):
+    def processReceive(self, directory):
         """ Return a process that will store a diff. """
         cmd = ["btrfs", "receive", directory]
 
-        if Store.skipDryRun(logger, dryrun)("Command: %s", cmd):
+        if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
             return None
 
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr, stdout=DEVNULL)
@@ -71,14 +72,14 @@ class Butter:
 
         return process
 
-    def send(self, targetPath, parent, streamContext, progress=True, dryrun=False):
+    def send(self, targetPath, parent, streamContext, progress=True):
         """ Write a (incremental) snapshot to the stream context manager. """
         if parent is not None:
             cmd = ["btrfs", "send", "-p", parent, targetPath]
         else:
             cmd = ["btrfs", "send", targetPath]
 
-        if Store.skipDryRun(logger, dryrun)("Command: %s", cmd):
+        if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
             return
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
