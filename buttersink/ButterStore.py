@@ -15,6 +15,7 @@ import logging
 import math
 import os
 import os.path
+import time
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
@@ -133,6 +134,7 @@ class ButterStore(Store.Store):
     def _fileSystemSync(self):
         with self.btrfs as mount:
             mount.SYNC()
+        time.sleep(2)
 
     def __unicode__(self):
         """ English description of self. """

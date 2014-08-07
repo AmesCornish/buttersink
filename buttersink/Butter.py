@@ -102,3 +102,12 @@ class Butter:
                 if len(data) == 0:
                     break
                 stream.write(data)
+
+            logger.debug("Waiting for send process...")
+            process.wait()
+
+            if process.returncode != 0:
+                raise Exception(
+                    "send returned error %d. %s may be corrupt."
+                    % (process.returncode, targetPath)
+                    )
