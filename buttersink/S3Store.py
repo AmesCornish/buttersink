@@ -263,6 +263,9 @@ class _Uploader:
     def fileno(self):
         raise IOError("S3 uploads don't use file numbers.")
 
+    def writeable(self):
+        return True
+
     def upload(self, bytes):
         self.chunkCount += 1
         logger.info(
