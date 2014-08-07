@@ -4,10 +4,10 @@
 
 from setuptools import setup
 
-with open("version.txt", "r") as version:
+with open("buttersink/version.txt", "r") as version:
     theVersion = version.readline().strip()
 
-with open("README.md", "r") as readme:
+with open("buttersink/README.md", "r") as readme:
     theReadMe = readme.read()
 
 setup(

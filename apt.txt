@@ -1,2 +1,4 @@
+btrfs-tools
 python-boto
 python-dev
+python-pip
