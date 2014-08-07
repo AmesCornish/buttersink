@@ -35,7 +35,7 @@ clean : clean_setup
 pypi : version.txt
 	./setup.py bdist sdist upload
 
-makestamps/source : $(shell git ls-files)
+makestamps/source : $(shell git ls-files '*.py')
 	touch $@
 
 version.txt : .git/index .git/refs/tags makestamps/source
