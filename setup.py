@@ -4,10 +4,10 @@
 
 from setuptools import setup
 
-with open("buttersink/version.txt", "r") as version:
+with open("version.txt", "r") as version:
     theVersion = version.readline().strip()
 
-with open("buttersink/README.md", "r") as readme:
+with open("README.md", "r") as readme:
     theReadMe = readme.read()
 
 setup(
@@ -26,22 +26,30 @@ setup(
     # could also include long_description, download_url, classifiers, etc.
 
     entry_points={
-        'console_scripts': ['buttersink=buttersink.buttersink:main'],
+        'console_scripts': [
+            'buttersink=buttersink.buttersink:main',
+            'btrfslist=buttersink.btrfslist:main',
+            ],
     },
 
     install_requires=['boto', 'psutil'],
 
+    # These will be in the package subdirectory, accessible by package code
     package_data={
-        '': ['version.txt', 'README.md', 'LICENSE.txt'],
+        '': ['version.txt'],
     },
+
+    # Top-level files, for access by setup, must be listed in MANIFEST.in
 
     scripts=['scripts/checksumdir'],
 
-    # package_dir={'buttersink': '..'},
+    # Problematic.  Avoid this.
+    # data_files=[
+    #     ('data', ['README.md', 'LICENSE.txt'])
+    # ],
+
+    # Problematic.  Avoid this.
     # include_package_data=True,
 
-    # Project uses reStructuredText, so ensure that the docutils get
-    # installed or upgraded on the target machine
-    # install_requires=['docutils>=0.3'],
-
+    # package_dir={'buttersink': '..'},
 )
