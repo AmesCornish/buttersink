@@ -103,7 +103,7 @@ class Butter:
                     break
                 stream.write(data)
 
-            logger.debug("Waiting for send process...")
+            logger.debug("Waiting for send process to finish...")
             process.wait()
 
             if process.returncode != 0:

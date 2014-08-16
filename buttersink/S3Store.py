@@ -123,6 +123,10 @@ class S3Store(Store.Store):
         # logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
         # logger.debug("Vols:\n%s", pprint.pformat(self.vols))
 
+    def listContents(self):
+        """ Return list of volumes or diffs in this Store's selected directory. """
+        return [diff for vol in self.diffs.values() for diff in vol]
+
     def getEdges(self, fromVol):
         """ Return the edges available from fromVol. """
         return self.diffs[fromVol]

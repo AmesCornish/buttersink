@@ -54,6 +54,10 @@ class Store(object):
 
         self.dryrun = dryrun
 
+    def listContents(self):
+        """ Return list of volumes or diffs in this Store's selected directory. """
+        return [vol.display(self, detail="line") for vol in self.listVolumes()]
+
     def listVolumes(self):
         """ Return list of all volumes in this Store's selected directory. """
         for (vol, paths) in self.paths.items():
@@ -303,6 +307,12 @@ class Volume:
         else:
             return cls(vol)
 
+def display(obj, detail='phrase'):
+    """ Friendly string for volume, using sink paths. """
+    try:
+        return obj.display(detail=detail)
+    except AttributeError:
+        return str(obj)
 
 def printBytes(number):
     """ Return a human-readable string for number. """

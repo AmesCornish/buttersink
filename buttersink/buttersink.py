@@ -157,8 +157,8 @@ def main():
     dest = parseSink(args.dest, source is not None, args.dry_run)
 
     if source is None:
-        for vol in dest.listVolumes():
-            print vol.display(dest, detail="line")
+        for item in dest.listContents():
+            print item
         return 0
 
     vols = source.listVolumes()
