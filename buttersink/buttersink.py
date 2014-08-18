@@ -36,8 +36,7 @@ except IOError:
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
     epilog="""
-<src>, <dst>:   [file://]/path/to/directory/[snapshot]
-                ssh://[user@]host/path/to/directory (Not implemented)
+<src>, <dst>:   [btrfs://]/path/to/directory/[snapshot]
                 s3://bucket/prefix/[snapshot]
 
 If only <dst> is supplied, just list available snapshots.  The trailing "/"
@@ -126,15 +125,16 @@ def parseSink(uri, isDest, dryrun):
     parts = match.groupdict()
 
     if parts['method'] is None:
-        parts['method'] = 'file'
+        parts['method'] = 'btrfs'
 
-    if parts['method'] == 'file':
+    if parts['method'] in ('btrfs', 'file'):
         parts['path'] = parts['host'] + '/' + parts['path']
 
     logger.debug(parts)
 
     Sinks = {
-        'file': ButterStore.ButterStore,
+        'btrfs': ButterStore.ButterStore,
+        # 'file': FileStore,
         's3': S3Store.S3Store,
         # 'ssh': SSHStore.SSHStore,
     }

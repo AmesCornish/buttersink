@@ -1,16 +1,25 @@
 {
-    "folders":
-    [
-        {
-            "path": ".",
-            "name": "Project",
-            "file_exclude_patterns": ["*.pyc", "*.stamp"]
-        }
-    ],
-    "settings":
-    {
-    },
-    "build_systems":
-    [
-    ]
+	"build_systems":
+	[
+		{
+			"name": "Anaconda Python Builder",
+			"selector": "source.python",
+			"shell_cmd": "python -u \"$file\""
+		}
+	],
+	"folders":
+	[
+		{
+			"file_exclude_patterns":
+			[
+				"*.pyc",
+				"*.stamp"
+			],
+			"name": "Project",
+			"path": "."
+		}
+	],
+	"settings":
+	{
+	}
 }

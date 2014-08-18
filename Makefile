@@ -55,13 +55,15 @@ version.txt : .git/index .git/refs/tags makestamps/source
   
 # OPTS=--dry-run
 # OPTS=--verbose
+LOGFILE=make_test.log
+OPTS=-l ${LOGFILE}
 EXEC=sudo ./buttersink.py ${OPTS}
 TEST_DIR=/mnt/butter/bs-test
 TEST_BUCKET=butter-sink
 
 .PHONY : test_quick
 test_quick : makestamps/test_code
-	@echo "*** Quick tests passed"
+	@echo "*** Quick tests passed ***"
 
 DEBUG_CODE=^[^\#]*logger\.setLevel\(|^theDebug = True|pudb
 
@@ -73,12 +75,12 @@ makestamps/test_code : makestamps/source
 
 .PHONY : test_full
 test_full : makestamps/test_restore makestamps/test_code
-	@echo "*** All tests passed"
+	@echo "*** All tests passed ***"
 
 .INTERMEDIATE : $(addprefix ${TEST_DIR}/snaps/,A B C)
 makestamps/test_backup : $(addprefix ${TEST_DIR}/snaps/,A B C)
 	@read -p "Please delete S3 test buckets, and press <enter> " FOO
-	${EXEC} file://${TEST_DIR}/snaps/ s3://${TEST_BUCKET}/test/
+	${EXEC} ${TEST_DIR}/snaps/ s3://${TEST_BUCKET}/test/
 	touch $@
 
 ${TEST_DIR} :
@@ -107,13 +109,14 @@ endef
 .PHONY : clean_test
 clean_test :
 	${CLEAN_TEST}
+	rm ${LOGFILE}
 	rm makestamps/test_* || true
 
 makestamps/test_restore : SNAP=B
 makestamps/test_restore : makestamps/test_backup | ${TEST_DIR}/restore
 	$(CLEAN_TEST)
 	sudo sync
-	${EXEC} s3://butter-sink/test/${SNAP} file://${TEST_DIR}/restore/
+	${EXEC} s3://butter-sink/test/${SNAP} ${TEST_DIR}/restore/
 	sudo sync
 	# Check that not *all* snapshots were restored
 	! ls -d $(addprefix ${TEST_DIR}/restore/,A B C)
@@ -123,4 +126,4 @@ makestamps/test_restore : makestamps/test_backup | ${TEST_DIR}/restore
 .PHONY : test_list
 test_list :
 	${EXEC} s3://${TEST_BUCKET}/test/
-	${EXEC} file://${TEST_DIR}/snaps/
+	${EXEC} ${TEST_DIR}/snaps/
