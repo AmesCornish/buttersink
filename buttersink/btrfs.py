@@ -419,13 +419,15 @@ class FileSystem(ioctl.Device):
 
         self.volumes = None
         self.mounts = None
+        self.devices = None
 
     @property
     def subvolumes(self):
         """ Subvolumes contained in this mount. """
         self.SYNC()
-        self._getRoots()
+        self._getDevices()
         self._getMounts()
+        self._getRoots()
         self._getUsage()
 
         volumes = Volume.volumes.values()
@@ -446,18 +448,40 @@ class FileSystem(ioctl.Device):
         logger.warn("Waiting for btrfs quota usage scan...")
         self.QUOTA_RESCAN_WAIT()
 
+    def _getDevices(self):
+        self.devices = []
+        fs = self.FS_INFO()
+        for i in xrange(1, fs.num_devices + 1):
+            dev = self.DEV_INFO(devid=i)
+            self.devices.append(dev.path)
+
     def _getMounts(self):
+
+        # This is a "fake" device, created separately for each subvol
+        # See https://bugzilla.redhat.com/show_bug.cgi?id=711881
+        # myDevice = os.stat(self.path).st_dev
+        # myDevice = (os.major(myDevice), os.minor(myDevice))
+
         Volume.mounts = {}
+
         defaultSubvol = self.DEFAULT_SUBVOL().id
         if defaultSubvol == 0:
             defaultSubvol = ""
         else:
             defaultSubvol = Volume.volumes[defaultSubvol].fullPath.rstrip("/")
+
         with open("/etc/mtab") as mtab:
             for line in mtab:
                 (dev, path, fs, opts, freq, passNum) = line.split()
                 if fs != "btrfs":
                     continue
+                if dev not in self.devices:
+                    logger.debug(
+                        "%s device (%s) not in %s devices (%s)",
+                        path, dev, self.path, self.devices,
+                    )
+                    continue
+
                 opts = {
                     opt: value
                     for (opt, _, value) in
