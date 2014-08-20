@@ -6,6 +6,7 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 if True:  # Headers
     if True:  # imports
+        import datetime
         import os
         import os.path
         import psutil
@@ -18,8 +19,6 @@ if True:  # Headers
     if True:  # constants
         import logging
         logger = logging.getLogger(__name__)
-
-        theChunkSize = 100 * (2 ** 20)
 
         DEVNULL = open(os.devnull, 'wb')
 
@@ -58,56 +57,99 @@ class Butter:
 
         return btrfsVersionString
 
-    def processReceive(self, directory):
-        """ Return a process that will store a diff. """
+    def receive(self, path):
+        """ Return a context manager for stream that will store a diff. """
+        directory = os.path.dirname(path)
+
         cmd = ["btrfs", "receive", directory]
 
         if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
             return None
 
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr, stdout=DEVNULL)
-
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return process
+        return _Writer(process, path)
 
-    def send(self, targetPath, parent, streamContext, progress=True):
-        """ Write a (incremental) snapshot to the stream context manager. """
+    def send(self, targetPath, parent):
+        """ Return context manager for stream to send a (incremental) snapshot. """
         if parent is not None:
             cmd = ["btrfs", "send", "-p", parent, targetPath]
         else:
             cmd = ["btrfs", "send", targetPath]
 
         if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
-            return
+            return None
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        try:
-            streamContext.metadata['btrfsVersion'] = self.btrfsVersion
-        except AttributeError:
-            pass
+        return _Reader(process, targetPath)
 
-        try:
-            streamContext.progress = progress
-        except AttributeError:
-            pass
 
-        with streamContext as stream:
-            while True:
-                data = process.stdout.read(theChunkSize)
-                if len(data) == 0:
-                    break
-                stream.write(data)
+class _Writer:
 
-            logger.debug("Waiting for send process to finish...")
-            process.wait()
+    """ Context Manager to write a snapshot. """
 
-            if process.returncode != 0:
-                raise Exception(
-                    "send returned error %d. %s may be corrupt."
-                    % (process.returncode, targetPath)
-                    )
+    def __init__(self, process, path):
+        self.process = process
+        self.stream = process.stdin
+        self.path = path
+
+    def __enter__(self):
+        return self.stream.__enter__()
+
+    def __exit__(self, exceptionType, exception, trace):
+        self.stream.__exit__(exceptionType, exception, trace)
+
+        logger.debug("Waiting for receive process to finish...")
+        self.process.wait()
+
+        if exception is None and self.process.returncode == 0:
+            return
+
+        if os.path.exists(self.path):
+            # This tries to mark partial (failed) transfers.
+
+            partial = self.path + ".part"
+
+            if os.path.exists(partial):
+                partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
+
+            os.rename(self.path, partial)
+
+        if exception is None:
+            raise Exception(
+                "receive returned error %d. %s may be corrupt."
+                % (self.process.returncode, self.path)
+                )
+
+
+class _Reader:
+
+    """ Context Manager to read a snapshot. """
+
+    def __init__(self, process, path):
+        self.process = process
+        self.stream = process.stdout
+        self.path = path
+
+    def __enter__(self):
+        return self.stream.__enter__()
+
+    def __exit__(self, exceptionType, exception, trace):
+        self.stream.__exit__(exceptionType, exception, trace)
+
+        logger.debug("Waiting for send process to finish...")
+        self.process.wait()
+
+        if exception is None and self.process.returncode == 0:
+            return
+
+        if exception is None:
+            raise Exception(
+                "send returned error %d. %s may be corrupt."
+                % (self.process.returncode, self.path)
+                )

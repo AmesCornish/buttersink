@@ -10,7 +10,6 @@ import btrfs
 import Butter
 import Store
 
-import datetime
 import logging
 import math
 import os
@@ -20,44 +19,6 @@ import time
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 theMinimumChangeRate = .00001
-
-
-class _Writer:
-
-    """ Context Manager to write a snapshot. """
-
-    def __init__(self, process, path):
-        self.process = process
-        self.stream = process.stdin
-        self.path = path
-
-    def __enter__(self):
-        return self.stream.__enter__()
-
-    def __exit__(self, exceptionType, exception, trace):
-        self.stream.__exit__(exceptionType, exception, trace)
-
-        logger.debug("Waiting for receive process...")
-        self.process.wait()
-
-        if exception is None and self.process.returncode == 0:
-            return
-
-        if os.path.exists(self.path):
-            # This tries to mark partial (failed) transfers.
-
-            partial = self.path + ".part"
-
-            if os.path.exists(partial):
-                partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
-
-            os.rename(self.path, partial)
-
-        if exception is None:
-            raise Exception(
-                "receive returned error %d. %s may be corrupt."
-                % (self.process.returncode, self.path)
-                )
 
 
 class ButterStore(Store.Store):
@@ -188,9 +149,7 @@ class ButterStore(Store.Store):
 
         path = self.selectReceivePath(paths)
 
-        process = self.butter.processReceive(os.path.dirname(path))
-
-        return _Writer(process, path) if process is not None else None
+        return self.butter.receive(path)
 
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
@@ -242,14 +201,12 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, diff, streamContext, progress=True):
+    def send(self, diff, progress=True):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         if not self.dryrun:
             self._fileSystemSync()
 
-        self.butter.send(
+        return self.butter.send(
             self.getSendPath(diff.toVol),
             self.getSendPath(diff.fromVol),
-            streamContext,
-            progress,
         )

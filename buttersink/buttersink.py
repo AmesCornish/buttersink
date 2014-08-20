@@ -65,7 +65,7 @@ command.add_argument('-q', '--quiet', action="count", default=0,
                      once: don't display progress.
                      twice: only display error messages""",
                      )
-command.add_argument('-l', '--logfile', type=argparse.FileType('w'),
+command.add_argument('-l', '--logfile', type=argparse.FileType('a'),
                      help='log debugging information to file',
                      )
 command.add_argument('-V', '--version', action="version", version='%(prog)s ' + theVersion,
@@ -178,28 +178,8 @@ def main():
     for diff in best.iterDiffs():
         if diff is None:
             raise Exception("Missing diff.  Can't fully replicate.")
-            continue
-
-        logger.info("%s: %s", "Keep" if diff.sink == dest else "Xfer", diff)
-
-        vol = diff.toVol
-        paths = diff.sink.getPaths(vol)
-
-        if diff.sink != dest:
-            streamContext = dest.receive(diff, paths)
-
-            diff.sink.send(diff, streamContext, progress=progress)
-
-            # TODO: For symmetry, put this into the streamContext.__exit__ method
-
-            if vol.hasInfo():
-                infoContext = dest.receiveVolumeInfo(paths)
-
-                if args.dry_run:
-                    vol.writeInfo(sys.stdout)
-                else:
-                    with infoContext as stream:
-                        vol.writeInfo(stream)
+        else:
+            diff.sendTo(dest, progress=progress)
 
     return 0
 

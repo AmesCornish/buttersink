@@ -20,9 +20,6 @@ if True:  # Imports and constants
         import re
         import sys
     if True:  # Constants
-        # For S3 uploads
-        theChunkSize = 100 * 2 ** 20
-
         # Maximum xumber of progress reports per chunk
         theProgressCount = 50
 
@@ -68,7 +65,7 @@ class S3Store(Store.Store):
             raise
 
         self.bucket = s3.get_bucket(self.bucketName)
-        self._flushPartialUploads()
+        self._flushPartialUploads(True)
         self._fillVolumesAndPaths()
 
     def __unicode__(self):
@@ -79,12 +76,19 @@ class S3Store(Store.Store):
         """ Return text description. """
         return unicode(self).encode('utf-8')
 
-    def _flushPartialUploads(self):
-        for upload in self.bucket.get_all_multipart_uploads():
-            if self.dryrun:
-                logger.warn("Old partial upload: %s", upload)
-            else:
-                logger.warn("Cancelling old partial upload: %s", upload)
+    def _flushPartialUploads(self, dryrun):
+        for upload in self.bucket.list_multipart_uploads():
+            # logger.debug("Upload: %s", upload.__dict__)
+            # for part in upload:
+                # logger.debug("  Part: %s", part.__dict__)
+
+            logger.warn("%s old partial upload: %s (%d parts)",
+                        "Found" if dryrun else "Canceling",
+                        upload,
+                        len([part for part in upload]),
+                        )
+
+            if not dryrun:
                 upload.cancel_upload()
 
     def _fillVolumesAndPaths(self):
@@ -174,23 +178,16 @@ class S3Store(Store.Store):
 
         return match
 
-    def send(self, diff, streamContext, progress=True):
+    def send(self, diff, progress=True):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         path = self.getSendPath(diff.toVol)
         keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
         key = self.bucket.get_key(keyName)
 
         if self._skipDryRun(logger)("send %s in %s", keyName, self):
-            return
+            return None
 
-        with streamContext as stream:
-            if progress:
-                key.get_contents_to_file(stream, cb=_DisplayProgress(), num_cb=theProgressCount)
-            else:
-                key.get_contents_to_file(stream)
-
-        if progress:
-            sys.stdout.write("\n")
+        return _Downloader(key, progress)
 
 
 class _DisplayProgress:
@@ -219,12 +216,71 @@ class _DisplayProgress:
         sys.stdout.flush()
 
 
+class _Downloader:
+
+    def __init__(self, key, progress=True):
+        self.key = key
+        self.progress = progress
+        self.mark = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exceptionType, exceptionValue, traceback):
+        if self.progress:
+            sys.stdout.write("\n")
+
+    def read(self, n=-1):
+        if self.mark >= self.key.size:
+            return b''
+
+        if self.progress:
+            (cb, num_cb) = (_DisplayProgress(), theProgressCount)
+        else:
+            (cb, num_cb) = (None, None)
+
+        if n < 0:
+            n = Store.theChunkSize
+
+        headers = {"Range": "bytes=%s-%s" % (self.mark, self.mark + n - 1)}
+
+        # TODO: Fix progress indicator by using a resumable download handler
+
+        data = self.key.get_contents_as_string(headers, cb=cb, num_cb=num_cb)
+
+        assert len(data) <= n, (len(data), data[:10])
+
+        self.mark += len(data)
+
+        return data
+
+
+class DefaultList(list):
+
+    """ list that automatically inserts None for missing items. """
+
+    def __setitem__(self, index, value):
+        """ Set item. """
+        if len(self) > index:
+            return list.__setitem__(self, index, value)
+        if len(self) < index:
+            self.extend([None] * (index - len(self)))
+        list.append(self, value)
+
+    def __getitem__(self, index):
+        """ Set item. """
+        if index >= len(self):
+            return None
+        return list.__getitem__(self, index)
+
+
 class _Uploader:
 
     def __init__(self, bucket, keyName):
         self.bucket = bucket
-        self.keyName = keyName
+        self.keyName = keyName.lstrip("/")
         self.uploader = None
+        self.parts = DefaultList()
         self.chunkCount = None
         self.metadata = {}
         self.progress = True
@@ -234,12 +290,29 @@ class _Uploader:
         return self
 
     def open(self):
+        self.chunkCount = 0
+        self.parts = DefaultList()
+
+        for upload in self.bucket.list_multipart_uploads():
+            if upload.key_name != self.keyName:
+                continue
+
+            logger.debug("Upload: %s", upload.__dict__)
+            for part in upload:
+                logger.debug("  Part: %s", part.__dict__)
+                self.parts[part.part_number - 1] = (part.size, part.etag)
+
+            if not self.parts:
+                continue
+
+            self.uploader = upload
+            return
+
         self.uploader = self.bucket.initiate_multipart_upload(
             self.keyName,
             encrypt_key=isEncrypted,
             metadata=self.metadata,
         )
-        self.chunkCount = 0
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
         self.close(abort=exceptionType is not None)
@@ -248,6 +321,31 @@ class _Uploader:
         else:
             logger.debug("close")
         return False  # Don't supress exception
+
+    def skipChunk(self, chunkSize, checkSum, data=None):
+        part = self.parts[self.chunkCount]
+        if part is None:
+            return False
+
+        (size, tag) = part
+        tag = tag.strip('"')
+
+        if size != chunkSize:
+            logger.warn("Unexpected chunk size %d instead of %d", chunkSize, size)
+            # return False
+        if tag != checkSum:
+            logger.warn("Bad check sum %d instead of %d", checkSum, tag)
+            return False
+
+        self.chunkCount += 1
+
+        logger.info(
+            "Skipping already uploaded %s chunk #%d",
+            Store.humanize(chunkSize),
+            self.chunkCount,
+            )
+
+        return True
 
     def write(self, bytes):
         self.upload(bytes)
@@ -260,8 +358,11 @@ class _Uploader:
             #     key = self.bucket.get_key(self.keyName)
             #     key.update_metadata(self.metadata)
         else:
-            # TODO: this doesn't free storage used by part uploads currently in progress
-            self.uploader.cancel_upload()
+            # self.uploader.cancel_upload()   # Delete (most of) the uploaded chunks.
+            parts = [part for part in self.uploader]
+            logger.debug("Uploaded parts: %s", parts)
+            pass  # Leave unfinished upload to resume later
+
         self.uploader = None
 
     def fileno(self):

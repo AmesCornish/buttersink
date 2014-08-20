@@ -6,13 +6,19 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 from __future__ import division
 
+import abc
 import collections
+import hashlib
+import io
 import logging
 import math
 import os.path
+import sys
 
 logger = logging.getLogger('__name__')
 # logger.setLevel('DEBUG')
+
+theChunkSize = 100 * (2 ** 20)
 
 
 class Store(object):
@@ -23,6 +29,8 @@ class Store(object):
     Paths should be indexed by volume.
 
     """
+
+    __metaclass__ = abc.ABCMeta
 
     ignoreExtraVolumes = False
 
@@ -124,26 +132,32 @@ class Store(object):
 
     # Abstract methods
 
+    @abc.abstractmethod
     def _fillVolumesAndPaths(self):
         """ Fill in self.paths. """
         raise NotImplementedError
 
+    @abc.abstractmethod
     def getEdges(self, fromVol):
         """ Return the edges available from fromVol. """
         raise NotImplementedError
 
+    @abc.abstractmethod
     def hasEdge(self, diff):
         """ True if Store already contains this edge. """
         raise NotImplementedError
 
+    @abc.abstractmethod
     def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         raise NotImplementedError
 
-    def send(self, diff, streamContext, progress=True):
-        """ Write the diff (toVol from fromVol) to the stream context manager. """
+    @abc.abstractmethod
+    def send(self, diff, progress=True):
+        """ Return Context Manager for a file-like (stream) object to send a diff. """
         raise NotImplementedError
 
+    @abc.abstractmethod
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         raise NotImplementedError
@@ -188,6 +202,68 @@ class Diff:
         """ Return whether size is estimated. """
         self._updateSize()
         return self._sizeIsEstimated
+
+    def sendTo(self, dest, progress=True):
+        """ Send this different to the dest Store. """
+        logger.info("%s: %s", "Keep" if self.sink == dest else "Xfer", self)
+
+        vol = self.toVol
+        paths = self.sink.getPaths(vol)
+
+        if self.sink != dest:
+            streamContext = dest.receive(self, paths)
+
+            sendContext = self.sink.send(self, progress)
+
+            # try:
+            #     streamContext.metadata['btrfsVersion'] = self.btrfsVersion
+            # except AttributeError:
+            #     pass
+
+            try:
+                streamContext.progress = progress
+            except AttributeError:
+                pass
+
+            try:
+                chunkSize = streamContext.chunkSize
+            except AttributeError:
+                chunkSize = theChunkSize
+
+            if sendContext is not None and streamContext is not None:
+                with sendContext as reader, streamContext as writer:
+                    checkBefore = None
+                    if hasattr(writer, 'skipChunk'):
+                        checkBefore = hasattr(reader, 'checkSum')
+
+                    while True:
+                        if checkBefore is True:
+                            (size, checkSum) = reader.checkSum(chunkSize)
+
+                            if writer.skipChunk(size, checkSum):
+                                reader.seek(size, io.SEEK_CUR)
+                                continue
+
+                        data = reader.read(chunkSize)
+                        if len(data) == 0:
+                            break
+
+                        if checkBefore is False:
+                            checkSum = hashlib.md5(data).hexdigest()
+
+                            if writer.skipChunk(len(data), checkSum, data):
+                                continue
+
+                        writer.write(data)
+
+            if vol.hasInfo():
+                infoContext = dest.receiveVolumeInfo(paths)
+
+                if infoContext is None:
+                    vol.writeInfo(sys.stdout)
+                else:
+                    with infoContext as stream:
+                        vol.writeInfo(stream)
 
     def _updateSize(self):
         if self._size and not self._sizeIsEstimated:
@@ -307,12 +383,14 @@ class Volume:
         else:
             return cls(vol)
 
+
 def display(obj, detail='phrase'):
     """ Friendly string for volume, using sink paths. """
     try:
         return obj.display(detail=detail)
     except AttributeError:
         return str(obj)
+
 
 def printBytes(number):
     """ Return a human-readable string for number. """
