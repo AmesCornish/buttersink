@@ -33,6 +33,8 @@ except IOError:
     print("Missing '%s'" % (theVersionFile))
     theVersion = "<unknown>"
 
+theChunkSize = 100
+
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
     epilog="""
@@ -70,6 +72,10 @@ command.add_argument('-l', '--logfile', type=argparse.FileType('a'),
                      )
 command.add_argument('-V', '--version', action="version", version='%(prog)s ' + theVersion,
                      help='display version',
+                     )
+
+command.add_argument('--part-size', action="store", type=int, default=theChunkSize,
+                     help='Size of chunks in a multipart upload',
                      )
 
 command.add_argument('--remote-receive', action="store_true",
@@ -181,7 +187,7 @@ def main():
         if diff is None:
             raise Exception("Missing diff.  Can't fully replicate.")
         else:
-            diff.sendTo(dest, progress=progress)
+            diff.sendTo(dest, chunkSize=args.part_size << 20, progress=progress)
 
     if args.delete:
         dest.deleteUnused()

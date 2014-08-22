@@ -82,14 +82,21 @@ class ButterStore(Store.Store):
                     if path is None:
                         continue
 
-                    logger.debug("%s %s", vol, path)
                     self.paths[vol].append(path)
+
+                    infoPath = self._fullPath(path + ".bs")
+                    if os.path.exists(infoPath):
+                        logger.debug("Reading %s", infoPath)
+                        with open(infoPath) as info:
+                            Store.Volume.readInfo(info)
 
                     if not path.startswith("/"):
                         relPath = path
 
                 if vol not in self.paths:
                     continue
+
+                logger.debug("%s", vol.display(sink=self, detail='phrase'))
 
                 if vol.uuid in self.butterVolumes:
                     logger.warn(
@@ -204,10 +211,10 @@ class ButterStore(Store.Store):
             rate = - math.log(1 - diffs / total) * (len(bvols) - 1) / (maxGen - minGen)
             rate /= 10  # Fudge
         except (ZeroDivisionError, ValueError):
-            logger.debug("Using minimum change rate.")
+            # logger.debug("Using minimum change rate.")
             rate = theMinimumChangeRate
 
-        logger.debug("Change rate: %f", rate)
+        # logger.debug("Change rate: %f", rate)
 
         return rate
 

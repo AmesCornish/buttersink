@@ -19,8 +19,6 @@ import sys
 logger = logging.getLogger('__name__')
 # logger.setLevel('DEBUG')
 
-theChunkSize = 100 * (2 ** 20)
-
 
 class Store(object):
 
@@ -221,7 +219,7 @@ class Diff:
         self._updateSize()
         return self._sizeIsEstimated
 
-    def sendTo(self, dest, progress=True):
+    def sendTo(self, dest, chunkSize, progress=True):
         """ Send this different to the dest Store. """
         logger.info("%s: %s", "Keep" if self.sink == dest else "Xfer", self)
 
@@ -249,7 +247,7 @@ class Diff:
         try:
             chunkSize = streamContext.chunkSize
         except AttributeError:
-            chunkSize = theChunkSize
+            pass
 
         if sendContext is not None and streamContext is not None:
             with sendContext as reader, streamContext as writer:
@@ -300,12 +298,12 @@ class Diff:
 
     def __str__(self):
         """ human-readable string. """
-        return u"%s from %s (%s%s) in %s" % (
+        return u"%s from %s (%s%s)" % (
             self.toVol.display(self.sink),
             self.fromVol.display(self.sink) if self.fromVol else "None",
             "~" if self.sizeIsEstimated else "",
             humanize(self.size),
-            self.sink,
+            # self.sink,
         )
 
 
@@ -337,12 +335,16 @@ class Volume:
     def writeInfo(self, stream):
         """ Write information about diffs into a file stream for use later. """
         for (fromUUID, size) in Diff.theKnownSizes[self.uuid].iteritems():
-            if size is not None and fromUUID is not None:
-                stream.write(str("%s\t%s\t%d\n" % (
-                    self.uuid,
-                    fromUUID,
-                    size,
-                )))
+            if size is None or fromUUID is None:
+                continue
+            if not isinstance(size, int):
+                logger.warning("Bad size: %s", size)
+                continue
+            stream.write(str("%s\t%s\t%d\n" % (
+                self.uuid,
+                fromUUID,
+                size,
+            )))
 
     def hasInfo(self):
         """ Will have information to write. """
@@ -358,6 +360,12 @@ class Volume:
         """ Read previously-written information about diffs. """
         for line in stream:
             (toUUID, fromUUID, size) = line.split()
+            try:
+                size = int(size)
+            except:
+                logger.warning("Bad size: %s", size)
+                continue
+            logger.debug("diff info: %s %s %d", toUUID, fromUUID, size)
             Diff.theKnownSizes[toUUID][fromUUID] = size
 
     def __unicode__(self):
@@ -377,7 +385,10 @@ class Volume:
 
     def display(self, sink=None, detail='phrase'):
         """ Friendly string for volume, using sink paths. """
-        if detail in ('line', 'paragraph') and self.size is not None:
+        if not isinstance(detail, int):
+            detail = detailNum[detail]
+
+        if detail >= detailNum['line'] and self.size is not None:
             size = " (%s%s)" % (
                 printBytes(self.size),
                 "" if self.exclusiveSize is None else (
@@ -388,7 +399,7 @@ class Volume:
             size = ""
 
         vol = "%s %s" % (
-            printUUID(self._uuid),
+            printUUID(self._uuid, detail - 1),
             sink.getSendPath(self) if sink else "",
         )
 
@@ -403,6 +414,9 @@ class Volume:
             return None
         else:
             return cls(vol)
+
+detailTypes = ('word', 'phrase', 'line', 'paragraph')
+detailNum = {t: n for (n, t) in zip(xrange(len(detailTypes)), detailTypes)}
 
 
 def display(obj, detail='phrase'):
@@ -432,10 +446,17 @@ def humanize(number):
     return "%.4g %s" % (mantissa, units[pow])
 
 
-def printUUID(uuid):
+def printUUID(uuid, detail='word'):
     """ Return friendly abbreviated string for uuid. """
+    if not isinstance(detail, int):
+        detail = detailNum[detail]
+
+    if detail > detailNum['word']:
+        return uuid
+
     if uuid is None:
         return None
+
     return "%s...%s" % (uuid[:4], uuid[-4:])
 
 

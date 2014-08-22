@@ -56,16 +56,21 @@ version.txt : .git/index .git/refs/tags makestamps/source
 # OPTS=--dry-run
 # OPTS=--verbose
 LOGFILE=make_test.log
-OPTS=-l ${LOGFILE}
+OPTS:=-l ${LOGFILE}
+OPTS:=${OPTS} --part-size=5
 EXEC=sudo ./buttersink.py ${OPTS}
 TEST_DIR=/mnt/butter/bs-test
 TEST_BUCKET=butter-sink
 
+# Count of 100K chunks:
+TEST_DATA_COUNT=60
+BS_LINE="\t1b40ccc7-f2cc-5e45-bca6-d74c6ffc31c4\t103350"
+
+DEBUG_CODE=^[^\#]*logger\.setLevel\(|^theDebug = True|pudb
+
 .PHONY : test_quick
 test_quick : makestamps/test_code
 	@echo "*** Quick tests passed ***"
-
-DEBUG_CODE=^[^\#]*logger\.setLevel\(|^theDebug = True|pudb
 
 makestamps/test_code : makestamps/source
 	flake8 buttersink
@@ -77,7 +82,7 @@ makestamps/test_code : makestamps/source
 test_full : makestamps/test_restore makestamps/test_code
 	@echo "*** All tests passed ***"
 
-.INTERMEDIATE : $(addprefix ${TEST_DIR}/snaps/,A B C)
+.SECONDARY : $(addprefix ${TEST_DIR}/snaps/,A B C)
 makestamps/test_backup : $(addprefix ${TEST_DIR}/snaps/,A B C)
 	@read -p "Please delete S3 test buckets, and press <enter> " FOO
 	${EXEC} ${TEST_DIR}/snaps/ s3://${TEST_BUCKET}/test/
@@ -91,10 +96,11 @@ ${TEST_DIR}/snaps ${TEST_DIR}/restore : | ${TEST_DIR}
 	mkdir $@
 
 ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
-	dd if=/dev/urandom of=${TEST_DIR}/$*.dat bs=100K count=1
+	dd if=/dev/urandom of=${TEST_DIR}/$*.dat bs=100K count=${TEST_DATA_COUNT}
 	cd ${TEST_DIR}; sha256sum --binary *.dat > sha256sum.txt
 	sudo btrfs fi sync ${TEST_DIR}
 	sudo btrfs sub snap -r ${TEST_DIR} $@
+	${EXEC} -n $@ | awk '/^[-0-9a-z]{36} / { print $$1, ${BS_LINE}}' > $@.bs
 	cd $@; sha256sum --check sha256sum.txt
 
 define CLEAN_TEST

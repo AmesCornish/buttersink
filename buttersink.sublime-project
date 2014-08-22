@@ -10,13 +10,19 @@
 	"folders":
 	[
 		{
+			"name": "Project",
+			"path": ".",
 			"file_exclude_patterns":
 			[
 				"*.pyc",
 				"*.stamp"
 			],
-			"name": "Project",
-			"path": "."
+			"folder_exclude_patterns":
+			[
+				"build",
+				"dist",
+				"*.egg-info"
+			]
 		}
 	],
 	"settings":

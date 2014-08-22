@@ -20,6 +20,7 @@ if True:  # Imports and constants
         import os.path
         import re
         import sys
+        import traceback
     if True:  # Constants
         # Maximum xumber of progress reports per chunk
         theProgressCount = 50
@@ -33,6 +34,12 @@ if True:  # Imports and constants
         logger = logging.getLogger(__name__)
 
 # logger.setLevel('DEBUG')
+
+
+def _displayTraceBack():
+    return ""
+    tb = traceback.format_stack()
+    return "\n" + "".join(tb[:-1])
 
 
 class S3Store(Store.Store):
@@ -107,7 +114,7 @@ class S3Store(Store.Store):
 
             if keyInfo is None:
                 if key.name[-1:] != '/':
-                    logger.warn("Ignoring '%s' in S3", key.name)
+                    logger.warning("Ignoring '%s' in S3", key.name)
                 continue
 
             if keyInfo['type'] == 'info':
@@ -135,7 +142,7 @@ class S3Store(Store.Store):
 
         # logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
         # logger.debug("Vols:\n%s", pprint.pformat(self.vols))
-        logger.debug("Extra:\n%s", (self.extraKeys))
+        # logger.debug("Extra:\n%s", (self.extraKeys))
 
     def listContents(self):
         """ Return list of volumes or diffs in this Store's selected directory. """
@@ -169,7 +176,7 @@ class S3Store(Store.Store):
         if self._skipDryRun(logger)("receive info in '%s'", path):
             return None
 
-        return io.BufferedWriter(_Uploader(self.bucket, path), buffer_size=theInfoBufferSize)
+        return _Uploader(self.bucket, path, bufferSize=theInfoBufferSize)
 
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
@@ -279,7 +286,7 @@ class _Downloader(io.RawIOBase):
             sys.stdout.write("\n")
 
     def read(self, n=-1):
-        if self.mark >= self.key.size:
+        if self.mark >= self.key.size or n == 0:
             return b''
 
         if self.progress:
@@ -288,15 +295,15 @@ class _Downloader(io.RawIOBase):
             (cb, num_cb) = (None, None)
 
         if n < 0:
-            n = Store.theChunkSize
-
-        headers = {"Range": "bytes=%s-%s" % (self.mark, self.mark + n - 1)}
+            headers = None
+        else:
+            headers = {"Range": "bytes=%s-%s" % (self.mark, self.mark + n - 1)}
 
         # TODO: Fix progress indicator by using a resumable download handler
 
         data = self.key.get_contents_as_string(headers, cb=cb, num_cb=num_cb)
 
-        assert len(data) <= n, (len(data), data[:10])
+        assert n < 0 or len(data) <= n, (len(data), data[:10])
 
         self.mark += len(data)
 
@@ -327,7 +334,7 @@ class DefaultList(list):
 
 class _Uploader(io.RawIOBase):
 
-    def __init__(self, bucket, keyName):
+    def __init__(self, bucket, keyName, bufferSize=None):
         self.bucket = bucket
         self.keyName = keyName.lstrip("/")
         self.uploader = None
@@ -335,12 +342,28 @@ class _Uploader(io.RawIOBase):
         self.chunkCount = None
         self.metadata = {}
         self.progress = True
+        self.bufferedWriter = None
+        self.bufferSize = bufferSize
+        self.exception = None
 
     def __enter__(self):
         self.open()
-        return self
+        if self.bufferSize:
+            self.bufferedWriter = io.BufferedWriter(self, buffer_size=self.bufferSize)
+            return self.bufferedWriter
+        else:
+            return self
 
     def open(self):
+        if self.uploader is not None:
+            logger.warning(
+                "Ignoring double open%s",
+                _displayTraceBack(),
+                )
+            return
+
+        logger.debug("Opening")
+
         self.chunkCount = 0
         self.parts = DefaultList()
 
@@ -365,12 +388,17 @@ class _Uploader(io.RawIOBase):
             metadata=self.metadata,
         )
 
+        assert self.uploader is not None
+
     def __exit__(self, exceptionType, exceptionValue, traceback):
-        self.close(abort=exceptionType is not None)
-        if exceptionType is not None:
-            logger.error("abort")
+        self.exception = exceptionValue
+        if self.bufferedWriter:
+            self.bufferedWriter.close()
+            if self.uploader is not None:
+                logger.warn("BufferedWriter didn't close raw stream.")
         else:
-            logger.debug("close")
+            self.close()
+
         return False  # Don't supress exception
 
     def skipChunk(self, chunkSize, checkSum, data=None):
@@ -382,10 +410,10 @@ class _Uploader(io.RawIOBase):
         tag = tag.strip('"')
 
         if size != chunkSize:
-            logger.warn("Unexpected chunk size %d instead of %d", chunkSize, size)
+            logger.warning("Unexpected chunk size %d instead of %d", chunkSize, size)
             # return False
         if tag != checkSum:
-            logger.warn("Bad check sum %d instead of %d", checkSum, tag)
+            logger.warning("Bad check sum %d instead of %d", checkSum, tag)
             return False
 
         self.chunkCount += 1
@@ -399,10 +427,24 @@ class _Uploader(io.RawIOBase):
         return True
 
     def write(self, bytes):
-        self.upload(bytes)
+        if len(bytes) == 0:
+            logger.debug("Ignoring empty upload request.")
+            return 0
+        return self.upload(bytes)
 
-    def close(self, abort=False):
-        if not abort:
+    def close(self):
+        if self.uploader is None:
+            logger.debug(
+                "Ignoring double close%s",
+                _displayTraceBack(),
+                )
+            return
+        logger.debug(
+            "Closing%s",
+            _displayTraceBack(),
+            )
+
+        if self.exception is None:
             self.uploader.complete_upload()
             # You cannot change metadata after uploading
             # if self.metadata:
@@ -423,6 +465,9 @@ class _Uploader(io.RawIOBase):
         return True
 
     def upload(self, bytes):
+        if self.chunkCount is None:
+            raise Exception("Uploading before opening uploader.")
+
         self.chunkCount += 1
         logger.info(
             "Uploading %s chunk #%d for %s",
@@ -440,3 +485,5 @@ class _Uploader(io.RawIOBase):
             self.uploader.upload_part_from_file(
                 fileObject, self.chunkCount
             )
+
+        return len(bytes)
