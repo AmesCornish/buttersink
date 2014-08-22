@@ -109,7 +109,7 @@ endef
 .PHONY : clean_test
 clean_test :
 	${CLEAN_TEST}
-	rm ${LOGFILE}
+	rm ${LOGFILE} || true
 	rm makestamps/test_* || true
 
 makestamps/test_restore : SNAP=B

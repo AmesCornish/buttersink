@@ -64,7 +64,9 @@ class Store(object):
 
     def listContents(self):
         """ Return list of volumes or diffs in this Store's selected directory. """
-        return [vol.display(self, detail="line") for vol in self.listVolumes()]
+        vols = list(self.listVolumes())
+        vols.sort(key=lambda v: self.getSendPath(v))
+        return [vol.display(self, detail="line") for vol in vols]
 
     def listVolumes(self):
         """ Return list of all volumes in this Store's selected directory. """
@@ -127,8 +129,8 @@ class Store(object):
         else:
             return fullPath
 
-    def _skipDryRun(self, logger):
-        return skipDryRun(logger, self.dryrun)
+    def _skipDryRun(self, logger, dryrun=None):
+        return skipDryRun(logger, dryrun or self.dryrun)
 
     # Abstract methods
 
@@ -160,6 +162,21 @@ class Store(object):
     @abc.abstractmethod
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def keep(self, diff):
+        """ Mark this diff (or volume) to be kept in path. """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def deleteUnused(self):
+        """ Delete any old snapshots in path, if not kept. """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def deletePartials(self):
+        """ Delete any old partial uploads/downloads in path. """
         raise NotImplementedError
 
 
@@ -210,60 +227,63 @@ class Diff:
         vol = self.toVol
         paths = self.sink.getPaths(vol)
 
-        if self.sink != dest:
-            streamContext = dest.receive(self, paths)
+        if self.sink == dest:
+            self.sink.keep(self)
+            return
 
-            sendContext = self.sink.send(self, progress)
+        streamContext = dest.receive(self, paths)
 
-            # try:
-            #     streamContext.metadata['btrfsVersion'] = self.btrfsVersion
-            # except AttributeError:
-            #     pass
+        sendContext = self.sink.send(self, progress)
 
-            try:
-                streamContext.progress = progress
-            except AttributeError:
-                pass
+        # try:
+        #     streamContext.metadata['btrfsVersion'] = self.btrfsVersion
+        # except AttributeError:
+        #     pass
 
-            try:
-                chunkSize = streamContext.chunkSize
-            except AttributeError:
-                chunkSize = theChunkSize
+        try:
+            streamContext.progress = progress
+        except AttributeError:
+            pass
 
-            if sendContext is not None and streamContext is not None:
-                with sendContext as reader, streamContext as writer:
-                    checkBefore = None
-                    if hasattr(writer, 'skipChunk'):
-                        checkBefore = hasattr(reader, 'checkSum')
+        try:
+            chunkSize = streamContext.chunkSize
+        except AttributeError:
+            chunkSize = theChunkSize
 
-                    while True:
-                        if checkBefore is True:
-                            (size, checkSum) = reader.checkSum(chunkSize)
+        if sendContext is not None and streamContext is not None:
+            with sendContext as reader, streamContext as writer:
+                checkBefore = None
+                if hasattr(writer, 'skipChunk'):
+                    checkBefore = hasattr(reader, 'checkSum')
 
-                            if writer.skipChunk(size, checkSum):
-                                reader.seek(size, io.SEEK_CUR)
-                                continue
+                while True:
+                    if checkBefore is True:
+                        (size, checkSum) = reader.checkSum(chunkSize)
 
-                        data = reader.read(chunkSize)
-                        if len(data) == 0:
-                            break
+                        if writer.skipChunk(size, checkSum):
+                            reader.seek(size, io.SEEK_CUR)
+                            continue
 
-                        if checkBefore is False:
-                            checkSum = hashlib.md5(data).hexdigest()
+                    data = reader.read(chunkSize)
+                    if len(data) == 0:
+                        break
 
-                            if writer.skipChunk(len(data), checkSum, data):
-                                continue
+                    if checkBefore is False:
+                        checkSum = hashlib.md5(data).hexdigest()
 
-                        writer.write(data)
+                        if writer.skipChunk(len(data), checkSum, data):
+                            continue
 
-            if vol.hasInfo():
-                infoContext = dest.receiveVolumeInfo(paths)
+                    writer.write(data)
 
-                if infoContext is None:
-                    vol.writeInfo(sys.stdout)
-                else:
-                    with infoContext as stream:
-                        vol.writeInfo(stream)
+        if vol.hasInfo():
+            infoContext = dest.receiveVolumeInfo(paths)
+
+            if infoContext is None:
+                vol.writeInfo(sys.stdout)
+            else:
+                with infoContext as stream:
+                    vol.writeInfo(stream)
 
     def _updateSize(self):
         if self._size and not self._sizeIsEstimated:
@@ -281,7 +301,7 @@ class Diff:
         """ human-readable string. """
         return u"%s from %s (%s%s) in %s" % (
             self.toVol.display(self.sink),
-            self.fromVol.display(self.sink) if self.fromVol else "<None>",
+            self.fromVol.display(self.sink) if self.fromVol else "None",
             "~" if self.sizeIsEstimated else "",
             humanize(self.size),
             self.sink,

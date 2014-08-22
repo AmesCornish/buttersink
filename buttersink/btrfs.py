@@ -11,6 +11,7 @@ from ioctl import Structure, t
 import collections
 import ioctl
 import logging
+import os.path
 import pprint
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
@@ -254,6 +255,30 @@ btrfs_ioctl_quota_rescan_args = Structure(
     packed=True
 )
 
+BTRFS_PATH_NAME_MAX = 4087
+btrfs_ioctl_vol_args = Structure(
+    (t.s64, 'fd'),
+    (t.char, 'name', BTRFS_PATH_NAME_MAX + 1),
+    packed=True
+)
+
+BTRFS_SUBVOL_NAME_MAX = 4039
+btrfs_ioctl_vol_args_v2 = Structure(
+    (t.s64, 'fd'),
+    (t.u64, 'transid'),
+    (t.u64, 'flags'),
+    (t.u64, 'unused', 4, t.readBuffer),
+    # union {
+    #     struct {
+    #         __u64 size;
+    #         struct btrfs_qgroup_inherit *qgroup_inherit;
+    #     };
+    #     __u64 unused[4];
+    # };
+    (t.char, 'name', BTRFS_SUBVOL_NAME_MAX + 1),
+    packed=True
+)
+
 BTRFS_IOCTL_MAGIC = 0x94
 
 objectTypeKeys = {
@@ -400,6 +425,26 @@ class Volume(object):
             # "\n\t" + pretty(self.__dict__),
             "",
         )
+
+    def destroy(self):
+        """ Delete this subvolume from the filesystem. """
+        path = next(iter(self.linuxPaths))
+        directory = _Directory(os.path.dirname(path))
+        directory.SNAP_DESTROY(name=os.path.basename(path))
+
+    def copy(self, path):
+        """ Make another snapshot of this into dirName. """
+        dest = _Directory(os.path.dirname(path))
+        with self._directory() as source:
+            dest.SNAP_CREATE_V2(
+                flags=BTRFS_SUBVOL_RDONLY,
+                name=os.path.basename(path),
+                fd=source.fd,
+                )
+
+    def _directory(self):
+        path = next(iter(self.linuxPaths))
+        return _Directory(path)
 
 
 class Control(ioctl.Control):
@@ -646,3 +691,11 @@ class FileSystem(ioctl.Device):
 # define BTRFS_IOC_SET_RECEIVED_SUBVOL _IOWR(BTRFS_IOCTL_MAGIC, 37, \
 #                 struct btrfs_ioctl_received_subvol_args)
 # define BTRFS_IOC_SEND _IOW(BTRFS_IOCTL_MAGIC, 38, struct btrfs_ioctl_send_args)
+
+
+class _Directory(ioctl.Device):
+    SNAP_DESTROY = Control.IOW(15, btrfs_ioctl_vol_args)
+    SNAP_CREATE_V2 = Control.IOW(23, btrfs_ioctl_vol_args_v2)
+
+# define BTRFS_IOC_START_SYNC _IOR(BTRFS_IOCTL_MAGIC, 24, __u64)
+# define BTRFS_IOC_WAIT_SYNC  _IOW(BTRFS_IOCTL_MAGIC, 22, __u64)

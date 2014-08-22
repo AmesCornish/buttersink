@@ -17,6 +17,7 @@ if True:  # Imports and constants
         import datetime
         import io
         import logging
+        import os.path
         import re
         import sys
     if True:  # Constants
@@ -55,6 +56,7 @@ class S3Store(Store.Store):
 
         # { fromVol: [diff] }
         self.diffs = None
+        self.extraKeys = None
 
         logger.info("Listing %s contents...", self)
 
@@ -82,18 +84,23 @@ class S3Store(Store.Store):
             # for part in upload:
                 # logger.debug("  Part: %s", part.__dict__)
 
-            logger.warn("%s old partial upload: %s (%d parts)",
-                        "Found" if dryrun else "Canceling",
-                        upload,
-                        len([part for part in upload]),
-                        )
+            if not upload.key_name.startswith(self.userPath.lstrip("/")):
+                continue
 
-            if not dryrun:
-                upload.cancel_upload()
+            if self._skipDryRun(logger, dryrun)(
+                "%s old partial upload: %s (%d parts)",
+                "Found" if dryrun else "Canceling",
+                upload,
+                len([part for part in upload]),
+            ):
+                return
+
+            upload.cancel_upload()
 
     def _fillVolumesAndPaths(self):
         """ Fill in self.paths. """
         self.diffs = collections.defaultdict((lambda: []))
+        self.extraKeys = {}
 
         for key in self.bucket.list():
             keyInfo = self._parseKeyName(key.name)
@@ -124,12 +131,17 @@ class S3Store(Store.Store):
             self.diffs[diff.fromVol].append(diff)
             self.paths[diff.toVol].append(path)
 
+            self.extraKeys[diff] = path
+
         # logger.debug("Diffs:\n%s", pprint.pformat(self.diffs))
         # logger.debug("Vols:\n%s", pprint.pformat(self.vols))
+        logger.debug("Extra:\n%s", (self.extraKeys))
 
     def listContents(self):
         """ Return list of volumes or diffs in this Store's selected directory. """
-        return [diff for vol in self.diffs.values() for diff in vol]
+        items = list(self.extraKeys.items())
+        items.sort(key=lambda t: t[1])
+        return [str(diff) for (diff, path) in items if not path.startswith("/")]
 
     def getEdges(self, fromVol):
         """ Return the edges available from fromVol. """
@@ -162,7 +174,7 @@ class S3Store(Store.Store):
     theKeyPattern = "^(?P<fullpath>.*)/(?P<to>[-a-zA-Z0-9]*)_(?P<from>[-a-zA-Z0-9]*)$"
 
     def _keyName(self, toUUID, fromUUID, path):
-        return "%s/%s_%s" % (path, toUUID, fromUUID)
+        return "%s/%s_%s" % (self._fullPath(path).lstrip("/"), toUUID, fromUUID)
 
     def _parseKeyName(self, name):
         """ Returns dict with fullpath, to, from. """
@@ -188,6 +200,42 @@ class S3Store(Store.Store):
             return None
 
         return _Downloader(key, progress)
+
+    def keep(self, diff):
+        """ Mark this diff (or volume) to be kept in path. """
+        path = self.extraKeys[diff]
+
+        if not path.startswith("/"):
+            logger.debug("Keeping %s", path)
+            del self.extraKeys[diff]
+            return
+
+        # Copy into self.userPath, if not there already
+
+        keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
+        newPath = os.path.join(self.userPath, os.path.basename(path))
+        newName = self._keyName(diff.toUUID, diff.fromUUID, newPath)
+
+        if not self._skipDryRun(logger)("Copy %s to %s", keyName, newName):
+            self.bucket.copy_key(newName, self.bucket.name, keyName)
+
+    def deleteUnused(self):
+        """ Delete any old snapshots in path, if not kept. """
+        for (diff, path) in self.extraKeys.items():
+            if path.startswith("/"):
+                continue
+
+            keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
+
+            if self._skipDryRun(logger)("Put %s into trash", keyName):
+                continue
+
+            self.bucket.copy_key("trash/" + keyName, self.bucket.name, keyName)
+            self.bucket.delete_key(keyName)
+
+    def deletePartials(self):
+        """ Delete any old partial uploads/downloads in path. """
+        self._flushPartialUploads(self.dryrun)
 
 
 class _DisplayProgress:
@@ -216,7 +264,7 @@ class _DisplayProgress:
         sys.stdout.flush()
 
 
-class _Downloader:
+class _Downloader(io.RawIOBase):
 
     def __init__(self, key, progress=True):
         self.key = key
@@ -254,6 +302,9 @@ class _Downloader:
 
         return data
 
+    def readable(self):
+        return True
+
 
 class DefaultList(list):
 
@@ -274,7 +325,7 @@ class DefaultList(list):
         return list.__getitem__(self, index)
 
 
-class _Uploader:
+class _Uploader(io.RawIOBase):
 
     def __init__(self, bucket, keyName):
         self.bucket = bucket
@@ -343,7 +394,7 @@ class _Uploader:
             "Skipping already uploaded %s chunk #%d",
             Store.humanize(chunkSize),
             self.chunkCount,
-            )
+        )
 
         return True
 
@@ -368,7 +419,7 @@ class _Uploader:
     def fileno(self):
         raise IOError("S3 uploads don't use file numbers.")
 
-    def writeable(self):
+    def writable(self):
         return True
 
     def upload(self, bytes):

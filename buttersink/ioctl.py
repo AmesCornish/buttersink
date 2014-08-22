@@ -36,11 +36,8 @@ class t:
 
     """ Type definitions for translating linux C headers to Python struct format values. """
 
-    u8 = 'B'
-    u16 = 'H'
-    u32 = 'L'
-    u64 = 'Q'
-
+    (s8, s16, s32, s64) = 'bhlq'
+    (u8, u16, u32, u64) = 'BHLQ'
     (le16, le32, le64) = (u16, u32, u64)  # Works on Linux x86
 
     char = 'c'

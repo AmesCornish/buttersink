@@ -46,6 +46,8 @@ class ButterStore(Store.Store):
         self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
         self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
+        self.extraVolumes = {}
+
         self._fillVolumesAndPaths()
 
     def _btrfsVol2StoreVol(self, bvol):
@@ -71,6 +73,8 @@ class ButterStore(Store.Store):
                     logger.warn("Skipping deleted volume %s", bv.uuid)
                     continue
 
+                relPath = None
+
                 # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
                 for path in bv.linuxPaths:
                     path = self._relativePath(path)
@@ -80,6 +84,9 @@ class ButterStore(Store.Store):
 
                     logger.debug("%s %s", vol, path)
                     self.paths[vol].append(path)
+
+                    if not path.startswith("/"):
+                        relPath = path
 
                 if vol not in self.paths:
                     continue
@@ -91,6 +98,9 @@ class ButterStore(Store.Store):
                     )
 
                 self.butterVolumes[vol.uuid] = bv
+
+                if relPath is not None:
+                    self.extraVolumes[vol] = relPath
 
     def _fileSystemSync(self):
         with self.btrfs as mount:
@@ -136,7 +146,7 @@ class ButterStore(Store.Store):
 
             toVol = self._btrfsVol2StoreVol(toBVol)
 
-            yield Store.Diff(self, toVol, fromVol, estimatedSize, True)
+            yield Store.Diff(self, toVol, fromVol, estimatedSize, sizeIsEstimated=True)
 
     def hasEdge(self, diff):
         """ True if Store already contains this edge. """
@@ -210,3 +220,37 @@ class ButterStore(Store.Store):
             self.getSendPath(diff.toVol),
             self.getSendPath(diff.fromVol),
         )
+
+    def keep(self, diff):
+        """ Mark this diff (or volume) to be kept in path. """
+        self._keepVol(diff.toVol)
+        self._keepVol(diff.fromVol)
+
+    def _keepVol(self, vol):
+        """ Mark this volume to be kept in path. """
+        if vol in self.extraVolumes:
+            del self.extraVolumes[vol]
+            return
+
+        newPath = self.selectReceivePath(self.paths[vol])
+
+        if self._skipDryRun(logger)("Copy %s to %s", vol, newPath):
+            return
+
+        self.butterVolumes[vol.uuid].copy(newPath)
+
+    def deleteUnused(self):
+        """ Delete any old snapshots in path, if not kept. """
+        for (vol, path) in self.extraVolumes.items():
+            if self._skipDryRun(logger)("Delete subvolume %s", path):
+                continue
+            self.butterVolumes[vol.uuid].destroy()
+
+    def deletePartials(self):
+        """ Delete any old partial uploads/downloads in path. """
+        for (vol, path) in self.extraVolumes.items():
+            if not path.endswith(".part"):
+                continue
+            if self._skipDryRun(logger)("Delete subvolume %s", path):
+                continue
+            self.butterVolumes[vol.uuid].destroy()

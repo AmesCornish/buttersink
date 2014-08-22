@@ -159,6 +159,8 @@ def main():
     if source is None:
         for item in dest.listContents():
             print item
+        if args.delete:
+            dest.deletePartials()
         return 0
 
     vols = source.listVolumes()
@@ -180,6 +182,9 @@ def main():
             raise Exception("Missing diff.  Can't fully replicate.")
         else:
             diff.sendTo(dest, progress=progress)
+
+    if args.delete:
+        dest.deleteUnused()
 
     return 0
 
