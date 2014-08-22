@@ -8,6 +8,7 @@ from __future__ import division
 
 import abc
 import collections
+import functools
 import hashlib
 import io
 import logging
@@ -129,8 +130,8 @@ class Store(object):
         else:
             return fullPath
 
-    def _skipDryRun(self, logger, dryrun=None):
-        return skipDryRun(logger, dryrun or self.dryrun)
+    def _skipDryRun(self, logger, level='DEBUG', dryrun=None):
+        return skipDryRun(logger, dryrun or self.dryrun, level)
 
     # Abstract methods
 
@@ -438,9 +439,16 @@ def printUUID(uuid):
     return "%s...%s" % (uuid[:4], uuid[-4:])
 
 
-def skipDryRun(logger, dryRun):
-    """ Print or log command about to be run, and return True if should be skipped. """
-    return _skipRun if dryRun else logger.debug
+def skipDryRun(logger, dryRun, level=logging.DEBUG):
+    """ Print or log command about to be run.
+
+    Return True if should be skipped. """
+    # This is an undocumented "feature"
+    # logging.log() require a numeric level
+    # logging.getLevelName() also maps names to numbers
+    if not isinstance(level, int):
+        level = logging.getLevelName(level)
+    return _skipRun if dryRun else functools.partial(logger.log, level)
 
 
 def _skipRun(format, *args):

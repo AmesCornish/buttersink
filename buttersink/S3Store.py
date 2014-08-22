@@ -87,7 +87,7 @@ class S3Store(Store.Store):
             if not upload.key_name.startswith(self.userPath.lstrip("/")):
                 continue
 
-            if self._skipDryRun(logger, dryrun)(
+            if self._skipDryRun(logger, 'DEBUG', dryrun)(
                 "%s old partial upload: %s (%d parts)",
                 "Found" if dryrun else "Canceling",
                 upload,
@@ -227,7 +227,7 @@ class S3Store(Store.Store):
 
             keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
 
-            if self._skipDryRun(logger)("Put %s into trash", keyName):
+            if self._skipDryRun(logger, 'INFO')("Trash: %s", diff):
                 continue
 
             self.bucket.copy_key("trash/" + keyName, self.bucket.name, keyName)
