@@ -235,6 +235,9 @@ class ButterStore(Store.Store):
 
     def _keepVol(self, vol):
         """ Mark this volume to be kept in path. """
+        if vol is None:
+            return
+
         if vol in self.extraVolumes:
             del self.extraVolumes[vol]
             return

@@ -101,10 +101,14 @@ class Store(object):
 
         """
         logger.debug("%s", paths)
+        if not paths:
+            path = os.path.basename(self.userPath) + '/Anon'
         try:
-            return self._fullPath([p for p in paths if not p.startswith("/")][0])
+            path = [p for p in paths if not p.startswith("/")][0]
         except IndexError:
-            return self._fullPath(os.path.basename(list(paths)[0]))
+            path = os.path.basename(list(paths)[0])
+
+        return self._fullPath(path)
 
     def _fullPath(self, path):
         if path.startswith("/"):

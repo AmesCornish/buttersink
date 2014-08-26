@@ -150,49 +150,53 @@ def parseSink(uri, isDest, dryrun):
 
 def main():
     """ Main program. """
-    args = command.parse_args()
+    try:
+        args = command.parse_args()
 
-    _setupLogging(args.quiet, args.logfile)
+        _setupLogging(args.quiet, args.logfile)
 
-    logger.debug("Arguments: %s", vars(args))
+        logger.debug("Arguments: %s", vars(args))
 
-    progress = args.quiet == 0
+        progress = args.quiet == 0
 
-    source = parseSink(args.source, False, args.dry_run)
+        source = parseSink(args.source, False, args.dry_run)
 
-    dest = parseSink(args.dest, source is not None, args.dry_run)
+        dest = parseSink(args.dest, source is not None, args.dry_run)
 
-    if source is None:
-        for item in dest.listContents():
-            print item
+        if source is None:
+            for item in dest.listContents():
+                print item
+            if args.delete:
+                dest.deletePartials()
+            return 0
+
+        vols = source.listVolumes()
+
+        best = BestDiffs.BestDiffs(vols, args.delete)
+        best.analyze(source, dest)
+
+        summary = best.summary()
+        logger.info("Optimal synchronization:")
+        for sink, values in summary.items():
+            logger.info("%s from %d diffs in %s",
+                        Store.humanize(values.size),
+                        values.count,
+                        sink or "TOTAL",
+                        )
+
+        for diff in best.iterDiffs():
+            if diff is None:
+                raise Exception("Missing diff.  Can't fully replicate.")
+            else:
+                diff.sendTo(dest, chunkSize=args.part_size << 20, progress=progress)
+
         if args.delete:
-            dest.deletePartials()
+            dest.deleteUnused()
+
         return 0
-
-    vols = source.listVolumes()
-
-    best = BestDiffs.BestDiffs(vols, args.delete)
-    best.analyze(source, dest)
-
-    summary = best.summary()
-    logger.info("Optimal synchronization:")
-    for sink, values in summary.items():
-        logger.info("%s from %d diffs in %s",
-                    Store.humanize(values.size),
-                    values.count,
-                    sink or "TOTAL",
-                    )
-
-    for diff in best.iterDiffs():
-        if diff is None:
-            raise Exception("Missing diff.  Can't fully replicate.")
-        else:
-            diff.sendTo(dest, chunkSize=args.part_size << 20, progress=progress)
-
-    if args.delete:
-        dest.deleteUnused()
-
-    return 0
+    except:
+        logger.exception("")
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())

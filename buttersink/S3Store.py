@@ -74,7 +74,7 @@ class S3Store(Store.Store):
             raise
 
         self.bucket = s3.get_bucket(self.bucketName)
-        self._flushPartialUploads(True)
+        # self._flushPartialUploads(True)
         self._fillVolumesAndPaths()
 
     def __unicode__(self):
@@ -94,9 +94,8 @@ class S3Store(Store.Store):
             if not upload.key_name.startswith(self.userPath.lstrip("/")):
                 continue
 
-            if self._skipDryRun(logger, 'DEBUG', dryrun)(
-                "%s old partial upload: %s (%d parts)",
-                "Found" if dryrun else "Canceling",
+            if self._skipDryRun(logger, 'INFO', dryrun)(
+                "Delete old partial upload: %s (%d parts)",
                 upload,
                 len([part for part in upload]),
             ):
@@ -148,7 +147,17 @@ class S3Store(Store.Store):
         """ Return list of volumes or diffs in this Store's selected directory. """
         items = list(self.extraKeys.items())
         items.sort(key=lambda t: t[1])
-        return [str(diff) for (diff, path) in items if not path.startswith("/")]
+
+        (count, size) = (0, 0)
+
+        for (diff, path) in items:
+            if path.startswith("/"):
+                continue
+            yield str(diff)
+            count += 1
+            size += diff.size
+
+        yield "TOTAL: %d diffs %s" % (count, Store.humanize(size))
 
     def getEdges(self, fromVol):
         """ Return the edges available from fromVol. """
@@ -228,17 +237,27 @@ class S3Store(Store.Store):
 
     def deleteUnused(self):
         """ Delete any old snapshots in path, if not kept. """
+        (count, size) = (0, 0)
+
         for (diff, path) in self.extraKeys.items():
             if path.startswith("/"):
                 continue
 
             keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
 
+            count += 1
+            size += diff.size
+
             if self._skipDryRun(logger, 'INFO')("Trash: %s", diff):
                 continue
 
-            self.bucket.copy_key("trash/" + keyName, self.bucket.name, keyName)
-            self.bucket.delete_key(keyName)
+            try:
+                self.bucket.copy_key("trash/" + keyName, self.bucket.name, keyName)
+                self.bucket.delete_key(keyName)
+            except boto.exception.S3ResponseError as error:
+                logger.error("%s: %s", error.code, error.message)
+
+        logger.info("Trashed %d diffs (%s)", count, Store.humanize(size))
 
     def deletePartials(self):
         """ Delete any old partial uploads/downloads in path. """
@@ -249,63 +268,89 @@ class _DisplayProgress:
 
     def __init__(self):
         self.startTime = datetime.datetime.now()
+        self.numCallBacks = theProgressCount
+        self.offset = 0
 
     def __call__(self, sent, total):
         if not sys.stdout.isatty():
             return
 
+        sent += self.offset
+
         elapsed = datetime.datetime.now() - self.startTime
         mbps = (sent * 8 / (10 ** 6) / elapsed.total_seconds())
 
+        if sent > 0:
+            eta = (total - sent) * elapsed.total_seconds() / sent
+            eta = datetime.timedelta(seconds=eta)
+        else:
+            eta = None
+
         sys.stdout.write(
-            "\r %s: Sent %s of %s (%d%%) (%.3g Mbps) %20s\r" % (
+            "\r %s: Sent %s of %s (%d%%) (%.3g Mbps) ETA: %s %20s\r" % (
                 elapsed,
                 Store.humanize(sent),
                 Store.humanize(total),
                 int(100 * sent / total),
                 mbps,
+                eta,
                 " ",
             )
         )
 
         sys.stdout.flush()
 
+    def endChunk(self, chunkSize):
+        self.offset += chunkSize
+
+    def close(self):
+        if not sys.stdout.isatty():
+            return
+        sys.stdout.write("\n")
+
+    @property
+    def botoArgs(self):
+        return (self, self.numCallBacks)
+
 
 class _Downloader(io.RawIOBase):
 
     def __init__(self, key, progress=True):
         self.key = key
-        self.progress = progress
+        if progress:
+            self.progress = (_DisplayProgress(), theProgressCount)
+        else:
+            self.progress = (None, None)
         self.mark = 0
 
     def __enter__(self):
         return self
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
-        if self.progress:
-            sys.stdout.write("\n")
+        (cb, num_cb) = self.progress
+        if cb:
+            cb.close()
 
     def read(self, n=-1):
         if self.mark >= self.key.size or n == 0:
             return b''
 
-        if self.progress:
-            (cb, num_cb) = (_DisplayProgress(), theProgressCount)
-        else:
-            (cb, num_cb) = (None, None)
+        (cb, num_cb) = self.progress
 
         if n < 0:
             headers = None
         else:
             headers = {"Range": "bytes=%s-%s" % (self.mark, self.mark + n - 1)}
 
-        # TODO: Fix progress indicator by using a resumable download handler
-
         data = self.key.get_contents_as_string(headers, cb=cb, num_cb=num_cb)
+        size = len(data)
 
-        assert n < 0 or len(data) <= n, (len(data), data[:10])
+        if cb is not None:
+            cb.endChunk(size)
 
-        self.mark += len(data)
+        assert n < 0 or size <= n, (size, data[:10])
+
+        self.mark += size
 
         return data
 
@@ -359,7 +404,7 @@ class _Uploader(io.RawIOBase):
             logger.warning(
                 "Ignoring double open%s",
                 _displayTraceBack(),
-                )
+            )
             return
 
         logger.debug("Opening")
@@ -437,12 +482,12 @@ class _Uploader(io.RawIOBase):
             logger.debug(
                 "Ignoring double close%s",
                 _displayTraceBack(),
-                )
+            )
             return
         logger.debug(
             "Closing%s",
             _displayTraceBack(),
-            )
+        )
 
         if self.exception is None:
             self.uploader.complete_upload()
@@ -476,14 +521,16 @@ class _Uploader(io.RawIOBase):
         fileObject = io.BytesIO(bytes)
 
         if self.progress:
-            self.uploader.upload_part_from_file(
-                fileObject, self.chunkCount, cb=_DisplayProgress(), num_cb=theProgressCount
-            )
-            if sys.stdout.isatty():
-                sys.stdout.write("\n")
+            cb = _DisplayProgress()
+            num_cb = cb.numCallBacks
         else:
-            self.uploader.upload_part_from_file(
-                fileObject, self.chunkCount
-            )
+            (cb, num_cb) = (None, None)
+
+        self.uploader.upload_part_from_file(
+            fileObject, self.chunkCount, cb=cb, num_cb=num_cb
+        )
+
+        if cb is not None:
+            cb.close()
 
         return len(bytes)
