@@ -11,7 +11,7 @@ Sources and destinations can be local btrfs file systems, remote btrfs
 file systems over SSH, or S3 buckets.
 
 To use the ssh back-end, ButterSink must be installed on the remote
-system.
+system.  (Note: ssh back-end is not yet implemented.)
 
 ButterSink *only* handles read-only subvolumes. It ignores read-write
 subvolumes and any files not in a subvolume.
@@ -20,7 +20,9 @@ Usage
 =====
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-usage: buttersink.py [-h] [-n] [-d] [-q] [-l LOGFILE] [-V] [<src>] <dst>
+usage: buttersink.py [-h] [-n] [-d] [-q] [-l LOGFILE] [-V]
+                     [--part-size PART_SIZE]
+                     [<src>] <dst>
 
 Synchronize two sets of btrfs snapshots.
 
@@ -32,19 +34,19 @@ optional arguments:
   -h, --help            show this help message and exit
   -n, --dry-run         display what would be transferred, but don't do it
   -d, --delete          delete any snapshots in <dst> that are not in <src>
-                        (Not implemented)
   -q, --quiet           once: don't display progress. twice: only display
                         error messages
   -l LOGFILE, --logfile LOGFILE
                         log debugging information to file
   -V, --version         display version
+  --part-size PART_SIZE
+                        Size of chunks in a multipart upload
 
-<src>, <dst>:   [file://]/path/to/directory/[snapshot]
-                ssh://[user@]host/path/to/directory (Not implemented)
+<src>, <dst>:   [btrfs://]/path/to/directory/[snapshot]
                 s3://bucket/prefix/[snapshot]
 
-If only <dst> is supplied, just list available snapshots.  The trailing "/"
-on a <src> *is* significant.
+If only <dst> is supplied, just list available snapshots.  NOTE: The trailing
+"/" *is* significant.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 See README.md and LICENSE.txt for more info.

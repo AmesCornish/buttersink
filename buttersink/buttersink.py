@@ -41,8 +41,8 @@ command = argparse.ArgumentParser(
 <src>, <dst>:   [btrfs://]/path/to/directory/[snapshot]
                 s3://bucket/prefix/[snapshot]
 
-If only <dst> is supplied, just list available snapshots.  The trailing "/"
-on a <src> *is* significant.
+If only <dst> is supplied, just list available snapshots.  NOTE: The trailing
+"/" *is* significant.
 
 Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 See README.md and LICENSE.txt for more info.
@@ -59,7 +59,7 @@ command.add_argument('-n', '--dry-run', action="store_true",
                      help="display what would be transferred, but don't do it",
                      )
 command.add_argument('-d', '--delete', action="store_true",
-                     help='delete any snapshots in <dst> that are not in <src> (Not implemented)',
+                     help='delete any snapshots in <dst> that are not in <src>',
                      )
 
 command.add_argument('-q', '--quiet', action="count", default=0,
@@ -194,7 +194,7 @@ def main():
             dest.deleteUnused()
 
         return 0
-    except:
+    except Exception:
         logger.exception("")
         return 1
 
