@@ -224,7 +224,7 @@ class Diff:
         return self._sizeIsEstimated
 
     def sendTo(self, dest, chunkSize, progress=True):
-        """ Send this different to the dest Store. """
+        """ Send this difference to the dest Store. """
         logger.info("%s: %s", "Keep" if self.sink == dest else "Xfer", self)
 
         vol = self.toVol
@@ -254,30 +254,33 @@ class Diff:
             pass
 
         if sendContext is not None and streamContext is not None:
-            with sendContext as reader, streamContext as writer:
-                checkBefore = None
-                if hasattr(writer, 'skipChunk'):
-                    checkBefore = hasattr(reader, 'checkSum')
+            with streamContext as writer:
+                # Open reader after writer,
+                # so any raised errors will abort write before writer closes.
+                with sendContext as reader:
+                    checkBefore = None
+                    if hasattr(writer, 'skipChunk'):
+                        checkBefore = hasattr(reader, 'checkSum')
 
-                while True:
-                    if checkBefore is True:
-                        (size, checkSum) = reader.checkSum(chunkSize)
+                    while True:
+                        if checkBefore is True:
+                            (size, checkSum) = reader.checkSum(chunkSize)
 
-                        if writer.skipChunk(size, checkSum):
-                            reader.seek(size, io.SEEK_CUR)
-                            continue
+                            if writer.skipChunk(size, checkSum):
+                                reader.seek(size, io.SEEK_CUR)
+                                continue
 
-                    data = reader.read(chunkSize)
-                    if len(data) == 0:
-                        break
+                        data = reader.read(chunkSize)
+                        if len(data) == 0:
+                            break
 
-                    if checkBefore is False:
-                        checkSum = hashlib.md5(data).hexdigest()
+                        if checkBefore is False:
+                            checkSum = hashlib.md5(data).hexdigest()
 
-                        if writer.skipChunk(len(data), checkSum, data):
-                            continue
+                            if writer.skipChunk(len(data), checkSum, data):
+                                continue
 
-                    writer.write(data)
+                        writer.write(data)
 
         if vol.hasInfo():
             infoContext = dest.receiveVolumeInfo(paths)
