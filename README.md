@@ -16,6 +16,33 @@ system.  (Note: ssh back-end is not yet implemented.)
 ButterSink *only* handles read-only subvolumes. It ignores read-write
 subvolumes and any files not in a subvolume.
 
+Features
+========
+
+ButterSink is designed for efficient reliable transfers for backups.
+Currently implemented features include:
+
+  * Transfers between a local btrfs filesystem and an Amazon S3 bucket
+
+  * Automatically synchronizes a set of snapshots, or a single snapshot,
+transferring only needed differences
+
+  * Intelligent selection of full and incremental transfers to minimize costs
+of transfer and storage, and to minimize risks from corruption of a difference
+
+  * Smart heuristics based on S3 file sizes, btrfs quota information, and
+btrfs-tools internal snapshot parent identification ("ruuid")
+
+  * Resumable, checksummed multi-part uploads to S3 as a back-end
+
+  * Robust handling of btrfs send and receive errors
+
+  * Configurable verbosity and logging
+
+  * Conveniently lists snapshots and sizes in either btrfs or S3
+
+  * Detects and (optionally) deletes failed partial transfers
+
 Usage
 =====
 
