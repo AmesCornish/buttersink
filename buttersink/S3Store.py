@@ -208,7 +208,7 @@ class S3Store(Store.Store):
 
     def send(self, diff, progress=True):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
-        path = self.getSendPath(diff.toVol)
+        path = self._fullPath(self.extraKeys[diff])
         keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
         key = self.bucket.get_key(keyName)
 
