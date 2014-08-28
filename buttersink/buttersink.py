@@ -10,6 +10,7 @@ if True:  # Headers
     if True:  # imports
 
         import argparse
+        import errno
         import logging
         import os.path
         import re
@@ -164,15 +165,26 @@ def main():
         dest = parseSink(args.dest, source is not None, args.dry_run)
 
         if source is None:
-            for item in dest.listContents():
+            source = dest
+            dest = None
+
+        try:
+            next(source.listVolumes())
+        except StopIteration:
+            logger.error("No snapshots in source.")
+            path = args.source or args.dest
+            if not path.endswith("/"):
+                logger.error("Try adding a '/' to '%s'.", path)
+            return 1
+
+        if dest is None:
+            for item in source.listContents():
                 print item
             if args.delete:
-                dest.deletePartials()
+                source.deletePartials()
             return 0
 
-        vols = source.listVolumes()
-
-        best = BestDiffs.BestDiffs(vols, args.delete)
+        best = BestDiffs.BestDiffs(source.listVolumes(), args.delete)
         best.analyze(source, dest)
 
         summary = best.summary()
@@ -193,9 +205,18 @@ def main():
         if args.delete:
             dest.deleteUnused()
 
+        logger.debug("Successful exit")
+
         return 0
-    except Exception:
-        logger.exception("")
+    except Exception as error:
+        if (
+            isinstance(error, IOError) and
+            error.errno == errno.EPERM and
+            os.getuid() != 0
+        ):
+            logger.error("You must be root to access a btrfs filesystem.  Use  'sudo'")
+        else:
+            logger.exception("")
         return 1
 
 if __name__ == "__main__":
