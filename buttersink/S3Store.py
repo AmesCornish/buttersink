@@ -33,6 +33,8 @@ if True:  # Imports and constants
 
         logger = logging.getLogger(__name__)
 
+        theTrashPrefix = "trash/"
+
 # logger.setLevel('DEBUG')
 
 
@@ -109,6 +111,9 @@ class S3Store(Store.Store):
         self.extraKeys = {}
 
         for key in self.bucket.list():
+            if key.name.startswith(theTrashPrefix):
+                continue
+
             keyInfo = self._parseKeyName(key.name)
 
             if keyInfo is None:
@@ -252,7 +257,7 @@ class S3Store(Store.Store):
                 continue
 
             try:
-                self.bucket.copy_key("trash/" + keyName, self.bucket.name, keyName)
+                self.bucket.copy_key(theTrashPrefix + keyName, self.bucket.name, keyName)
                 self.bucket.delete_key(keyName)
             except boto.exception.S3ResponseError as error:
                 logger.error("%s: %s", error.code, error.message)
