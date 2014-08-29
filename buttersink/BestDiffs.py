@@ -262,7 +262,7 @@ class BestDiffs:
 
         # Storage
         if sink != self.dest or self.delete:
-            cost += size / 32
+            cost += size / 16
 
         # Corruption risk
         cost += (prevSize + size) * (2 ** (height - 8))

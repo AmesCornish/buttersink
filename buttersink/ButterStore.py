@@ -186,7 +186,7 @@ class ButterStore(Store.Store):
         estimatedSize += toBVol.totalSize * (1 - math.exp(-changeRate * genDiff))
         estimatedSize = max(toBVol.exclusiveSize, estimatedSize)
 
-        return estimatedSize
+        return 2 * estimatedSize
 
     def _calcChangeRate(self, bvols):
         total = 0
