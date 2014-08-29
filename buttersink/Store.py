@@ -16,7 +16,7 @@ import math
 import os.path
 import sys
 
-logger = logging.getLogger('__name__')
+logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
 

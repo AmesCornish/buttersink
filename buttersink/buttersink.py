@@ -105,6 +105,7 @@ def _setupLogging(quietLevel, logFile):
     root.setLevel("INFO" if theDebug else "DEBUG")  # When debugging, this is handled per-logger
 
     def add(handler, level, format):
+        handler = logging.StreamHandler(handler)
         handler.setLevel(level)
         handler.setFormatter(logging.Formatter(format))
         root.addHandler(handler)
@@ -112,10 +113,12 @@ def _setupLogging(quietLevel, logFile):
     level = "DEBUG" if theDebug else "INFO" if quietLevel < 2 else "WARN"
     formatString = theDebugDisplayFormat if theDebug else theDisplayFormat
 
-    add(logging.StreamHandler(sys.stdout), level, formatString)
+    add(sys.stdout, level, formatString)
 
     if logFile is not None:
-        add(logging.StreamHandler(logFile), "DEBUG", theLogFormat)
+        add(logFile, "DEBUG", theLogFormat)
+
+    logging.getLogger('boto').setLevel("WARN")
 
 
 def parseSink(uri, isDest, dryrun):
