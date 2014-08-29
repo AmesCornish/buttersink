@@ -117,6 +117,9 @@ From source:
     make
     ./buttersink.py --help
 
+    sudo make install
+    buttersink --help
+
 With PyPi:
 
     pip install --upgrade buttersink
@@ -149,4 +152,4 @@ This program is distributed in the hope that it will be useful, but
 WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-See LICENSE.md for more details.
+See LICENSE.txt for more details.
