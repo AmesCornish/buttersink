@@ -82,7 +82,7 @@ class Butter:
         if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
             return None
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=DEVNULL)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
