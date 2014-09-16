@@ -440,7 +440,7 @@ class Volume(object):
                 flags=BTRFS_SUBVOL_RDONLY,
                 name=os.path.basename(path),
                 fd=source.fd,
-                )
+            )
 
     def _directory(self):
         path = next(iter(self.linuxPaths))
@@ -452,6 +452,10 @@ class Control(ioctl.Control):
     """ A btrfs IOCTL. """
 
     magic = BTRFS_IOCTL_MAGIC
+
+
+class _BtrfsError(Exception):
+    pass
 
 
 class FileSystem(ioctl.Device):
@@ -636,7 +640,8 @@ class FileSystem(ioctl.Device):
     def _getUsage(self):
         try:
             self._unsafeGetUsage()
-        except IOError:
+        except (IOError, _BtrfsError) as error:
+            logger.warn("%s", error)
             self._rescanSizes()
             self._unsafeGetUsage()
 
@@ -650,6 +655,14 @@ class FileSystem(ioctl.Device):
                     vol = Volume.volumes[header.offset]
                     vol.totalSize = data.referenced
                     vol.exclusiveSize = data.exclusive
+
+                    if (
+                        data.referenced < 0 or
+                        data.exclusive < 0 or
+                        data.referenced < data.exclusive
+                    ):
+                        raise _BtrfsError("Btrfs returned corrupt sizes")
+
                 except KeyError:
                     pass
 
