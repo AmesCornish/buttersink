@@ -279,6 +279,23 @@ btrfs_ioctl_vol_args_v2 = Structure(
     packed=True
 )
 
+btrfs_ioctl_timespec = Structure(
+    (t.u64, 'sec'),
+    (t.u32, 'nsec'),
+    packed=True
+)
+
+btrfs_ioctl_received_subvol_args = Structure(
+    (t.char, 'uuid', BTRFS_UUID_SIZE),   # /* in */
+    (t.u64, 'stransid'),                # /* in */
+    (t.u64, 'rtransid'),                # /* out */
+    (btrfs_ioctl_timespec, 'stime'),        # /* in */
+    (btrfs_ioctl_timespec, 'rtime'),        # /* out */
+    (t.u64, 'flags'),                   # /* in */
+    (t.u64, 'reserved', 16),             # /* in */
+    packed=True
+)
+
 BTRFS_IOCTL_MAGIC = 0x94
 
 objectTypeKeys = {
@@ -434,17 +451,17 @@ class Volume(object):
 
     def copy(self, path):
         """ Make another snapshot of this into dirName. """
-        dest = _Directory(os.path.dirname(path))
-        with self._directory() as source:
+        destDir = _Directory(os.path.dirname(path))
+        with self._snapshot() as source, destDir as dest:
             dest.SNAP_CREATE_V2(
                 flags=BTRFS_SUBVOL_RDONLY,
-                name=os.path.basename(path),
+                name=str(os.path.basename(path)),
                 fd=source.fd,
             )
 
-    def _directory(self):
+    def _snapshot(self):
         path = next(iter(self.linuxPaths))
-        return _Directory(path)
+        return SnapShot(path)
 
 
 class Control(ioctl.Control):
@@ -709,6 +726,14 @@ class FileSystem(ioctl.Device):
 class _Directory(ioctl.Device):
     SNAP_DESTROY = Control.IOW(15, btrfs_ioctl_vol_args)
     SNAP_CREATE_V2 = Control.IOW(23, btrfs_ioctl_vol_args_v2)
+
+
+class SnapShot(ioctl.Device):
+
+    """ SnapShot (read-only subvolume) identified by path. """
+
+    SET_RECEIVED_SUBVOL = Control.IOWR(37, btrfs_ioctl_received_subvol_args)
+
 
 # define BTRFS_IOC_START_SYNC _IOR(BTRFS_IOCTL_MAGIC, 24, __u64)
 # define BTRFS_IOC_WAIT_SYNC  _IOW(BTRFS_IOCTL_MAGIC, 22, __u64)

@@ -51,7 +51,7 @@ class ButterStore(Store.Store):
         self._fillVolumesAndPaths()
 
     def _btrfsVol2StoreVol(self, bvol):
-        uuid = bvol.received_uuid if self.isDest else bvol.uuid
+        uuid = bvol.received_uuid or bvol.uuid
         if uuid is None:
             return None
         return Store.Volume(uuid, bvol.totalSize, bvol.exclusiveSize, bvol.current_gen)
@@ -244,7 +244,7 @@ class ButterStore(Store.Store):
 
         newPath = self.selectReceivePath(self.paths[vol])
 
-        if self._skipDryRun(logger)("Copy %s to %s", vol, newPath):
+        if self._skipDryRun(logger, 'INFO')("Copy %s to %s", vol, newPath):
             return
 
         self.butterVolumes[vol.uuid].copy(newPath)
