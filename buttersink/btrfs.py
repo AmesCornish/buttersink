@@ -7,10 +7,13 @@
 # This is NOT a complete implementation,
 # just a few useful routines for my current project.
 
+from __future__ import division
+
 from ioctl import Structure, t
 import collections
 import ioctl
 import logging
+import math
 import os.path
 import pprint
 logger = logging.getLogger(__name__)
@@ -352,6 +355,20 @@ BTRFS_FS_TREE_OBJECTID = 5
 BTRFS_QUOTA_TREE_OBJECTID = 8
 
 
+def humanize(number):
+    """ Return a human-readable string for number. """
+    # units = ('bytes', 'KB', 'MB', 'GB', 'TB')
+    # base = 1000
+    units = ('bytes', 'KiB', 'MiB', 'GiB', 'TiB')
+    base = 1024
+    if number is None:
+        return None
+    pow = int(math.log(number, base)) if number > 0 else 0
+    pow = min(pow, len(units) - 1)
+    mantissa = number / (base ** pow)
+    return "%.4g %s" % (mantissa, units[pow])
+
+
 class Volume(object):
 
     """ Represents a subvolume. """
@@ -423,7 +440,7 @@ class Volume(object):
         """ String representation. """
         # logger.debug("%d %d %d", self.gen, self.info.generation, self.info.inode.generation)
         # logger.debug("%o %o", self.info.flags, self.info.inode.flags)
-        return """%4d '%s' (level:%d gen:%d total:%d exclusive:%d%s)
+        return """%4d '%s' (level:%d gen:%d total:%s exclusive:%s%s)
         %s (parent:%s received:%s)
         %s%s""" % (
             self.id or -1,
@@ -432,8 +449,8 @@ class Volume(object):
             self.level or -1,
             self.current_gen or -1,
             # self.size,
-            self.totalSize or -1,
-            self.exclusiveSize or -1,
+            humanize(self.totalSize or -1),
+            humanize(self.exclusiveSize or -1),
             " ro" if self.readOnly else "",
             self.uuid,
             self.parent_uuid,
