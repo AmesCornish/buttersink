@@ -179,6 +179,12 @@ class BestDiffs:
                             logger.debug("Ignoring looping edge: %s", toVol.display(sink))
                             continue
 
+                        if sink != self.dest and edge.sizeIsEstimated:
+                            sink.measureSize(edge)
+                            newCost = self._cost(sink, edge.size, fromSize, height)
+                            if oldCost is not None and oldCost <= newCost:
+                                continue
+
                         logger.debug(
                             "Replacing edge (%s -> %s cost) %s",
                             Store.humanize(oldCost),

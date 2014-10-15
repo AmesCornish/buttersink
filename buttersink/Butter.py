@@ -72,14 +72,14 @@ class Butter:
 
         return _Writer(process, path)
 
-    def send(self, targetPath, parent):
+    def send(self, targetPath, parent, allowDryRun=True):
         """ Return context manager for stream to send a (incremental) snapshot. """
         if parent is not None:
             cmd = ["btrfs", "send", "-p", parent, targetPath]
         else:
             cmd = ["btrfs", "send", targetPath]
 
-        if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
+        if Store.skipDryRun(logger, self.dryrun and allowDryRun)("Command: %s", cmd):
             return None
 
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=DEVNULL)

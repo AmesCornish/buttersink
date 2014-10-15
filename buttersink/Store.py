@@ -16,6 +16,8 @@ import math
 import os.path
 import sys
 
+theInfoExtension = ".bs"
+
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
@@ -148,6 +150,11 @@ class Store(object):
         raise NotImplementedError
 
     @abc.abstractmethod
+    def measureSize(self, diff):
+        """ Spend some time to get an accurate size. """
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def hasEdge(self, diff):
         """ True if Store already contains this edge. """
         raise NotImplementedError
@@ -192,11 +199,7 @@ class Diff:
         self.sink = sink
         self.toVol = Volume.make(toVol)
         self.fromVol = Volume.make(fromVol)
-        self._size = size
-        self._sizeIsEstimated = sizeIsEstimated
-
-        if self.fromVol is not None and size is not None and not sizeIsEstimated:
-            Diff.theKnownSizes[self.toUUID][self.fromUUID] = size
+        self.setSize(size, sizeIsEstimated)
 
     # {toVolume: {fromVolume: size}}
     theKnownSizes = collections.defaultdict(lambda: collections.defaultdict(lambda: None))
@@ -223,6 +226,14 @@ class Diff:
         self._updateSize()
         return self._sizeIsEstimated
 
+    def setSize(self, size, sizeIsEstimated):
+        """ Update size. """
+        self._size = size
+        self._sizeIsEstimated = sizeIsEstimated
+
+        if self.fromVol is not None and size is not None and not sizeIsEstimated:
+            Diff.theKnownSizes[self.toUUID][self.fromUUID] = size
+
     def sendTo(self, dest, chunkSize, progress=True):
         """ Send this difference to the dest Store. """
         logger.info("%s: %s", "Keep" if self.sink == dest else "Xfer", self)
@@ -234,27 +245,27 @@ class Diff:
             self.sink.keep(self)
             return
 
-        streamContext = dest.receive(self, paths)
+        receiveContext = dest.receive(self, paths)
 
         sendContext = self.sink.send(self, progress)
 
         # try:
-        #     streamContext.metadata['btrfsVersion'] = self.btrfsVersion
+        #     receiveContext.metadata['btrfsVersion'] = self.btrfsVersion
         # except AttributeError:
         #     pass
 
         try:
-            streamContext.progress = progress
+            receiveContext.progress = progress
         except AttributeError:
             pass
 
         try:
-            chunkSize = streamContext.chunkSize
+            chunkSize = receiveContext.chunkSize
         except AttributeError:
             pass
 
-        if sendContext is not None and streamContext is not None:
-            with streamContext as writer:
+        if sendContext is not None and receiveContext is not None:
+            with receiveContext as writer:
                 # Open reader after writer,
                 # so any raised errors will abort write before writer closes.
                 with sendContext as reader:

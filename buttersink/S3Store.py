@@ -101,7 +101,7 @@ class S3Store(Store.Store):
                 upload,
                 len([part for part in upload]),
             ):
-                return
+                continue
 
             upload.cancel_upload()
 
@@ -172,6 +172,10 @@ class S3Store(Store.Store):
         """ Test whether edge is in this sink. """
         return diff.toVol in [d.toVol for d in self.diffs[diff.fromVol]]
 
+    def measureSize(self, diff):
+        """ Spend some time to get an accurate size. """
+        logger.warn("Don't need to measure S3 diffs")
+
     def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
         path = self.selectReceivePath(paths)
@@ -185,7 +189,7 @@ class S3Store(Store.Store):
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         path = self.selectReceivePath(paths)
-        path = path + ".bs"
+        path = path + Store.theInfoExtension
 
         if self._skipDryRun(logger)("receive info in '%s'", path):
             return None
@@ -199,7 +203,7 @@ class S3Store(Store.Store):
 
     def _parseKeyName(self, name):
         """ Returns dict with fullpath, to, from. """
-        if name.endswith(".bs"):
+        if name.endswith(Store.theInfoExtension):
             return {'type': 'info'}
 
         match = self.keyPattern.match(name)

@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 theMinimumChangeRate = .00001
 
+theChunkSize = 100 << 20
+
 
 class ButterStore(Store.Store):
 
@@ -84,7 +86,7 @@ class ButterStore(Store.Store):
 
                     self.paths[vol].append(path)
 
-                    infoPath = self._fullPath(path + ".bs")
+                    infoPath = self._fullPath(path + Store.theInfoExtension)
                     if os.path.exists(infoPath):
                         logger.debug("Reading %s", infoPath)
                         with open(infoPath) as info:
@@ -171,7 +173,7 @@ class ButterStore(Store.Store):
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
         path = self.selectReceivePath(paths)
-        path = path + ".bs"
+        path = path + Store.theInfoExtension
 
         if Store.skipDryRun(logger, self.dryrun)("receive to %s", path):
             return None
@@ -187,6 +189,41 @@ class ButterStore(Store.Store):
         estimatedSize = max(toBVol.exclusiveSize, estimatedSize)
 
         return 2 * estimatedSize
+
+    def measureSize(self, diff):
+        """ Spend some time to get an accurate size. """
+        self._fileSystemSync()
+
+        sendContext = self.butter.send(
+            self.getSendPath(diff.toVol),
+            self.getSendPath(diff.fromVol),
+            allowDryRun=False,
+        )
+
+        totalSize = 0
+
+        logger.warn("Measuring %s...", diff)
+        with sendContext as reader:
+            while True:
+                data = reader.read(theChunkSize)
+                size = len(data)
+                if size == 0:
+                    break
+                totalSize += size
+
+        diff.setSize(totalSize, False)
+
+        logger.info("... %s", Store.humanize(totalSize))
+
+        for path in self.getPaths(diff.toVol):
+            path = self._fullPath(path) + Store.theInfoExtension
+
+            with open(path, "a") as infoFile:
+                infoFile.write(str("%s\t%s\t%d\n" % (
+                    diff.toUUID,
+                    diff.fromUUID,
+                    totalSize,
+                )))
 
     def _calcChangeRate(self, bvols):
         total = 0
