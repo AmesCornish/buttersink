@@ -10,6 +10,7 @@ import btrfs
 import Butter
 import Store
 
+import io
 import logging
 import math
 import os
@@ -200,30 +201,36 @@ class ButterStore(Store.Store):
             allowDryRun=False,
         )
 
-        totalSize = 0
+        class _Measure(io.RawIOBase):
+            def __init__(self):
+                self.totalSize = None
+
+            def __enter__(self):
+                self.totalSize = 0
+
+            def __exit__(self, exceptionType, exceptionValue, traceback):
+                return False  # Don't supress exception
+
+            def writable(self):
+                return True
+
+            def write(self, bytes):
+                self.totalSize += len(bytes)
 
         logger.warn("Measuring %s...", diff)
-        with sendContext as reader:
-            while True:
-                data = reader.read(theChunkSize)
-                size = len(data)
-                if size == 0:
-                    break
-                totalSize += size
 
-        diff.setSize(totalSize, False)
+        measure = _Measure()
+        Store.transfer(sendContext, measure, theChunkSize, False)
 
-        logger.info("... %s", Store.humanize(totalSize))
+        diff.setSize(measure.totalSize, False)
+
+        logger.info("... %s", Store.humanize(measure.totalSize))
 
         for path in self.getPaths(diff.toVol):
             path = self._fullPath(path) + Store.theInfoExtension
 
             with open(path, "a") as infoFile:
-                infoFile.write(str("%s\t%s\t%d\n" % (
-                    diff.toUUID,
-                    diff.fromUUID,
-                    totalSize,
-                )))
+                diff.toVol.writeInfoLine(infoFile, diff.fromUUID, measure.totalSize)
 
     def _calcChangeRate(self, bvols):
         total = 0

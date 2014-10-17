@@ -6,6 +6,8 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 from __future__ import division
 
+from util import humanize
+
 import abc
 import collections
 import functools
@@ -190,6 +192,48 @@ class Store(object):
         raise NotImplementedError
 
 
+def transfer(sendContext, receiveContext, chunkSize, progress=True):
+    """ Transfer (large) data from sender to receiver. """
+    try:
+        receiveContext.progress = progress
+    except AttributeError:  # FIX: This will never get thrown
+        pass
+
+    try:
+        chunkSize = receiveContext.chunkSize
+    except AttributeError:
+        pass
+
+    if sendContext is not None and receiveContext is not None:
+        with receiveContext as writer:
+            # Open reader after writer,
+            # so any raised errors will abort write before writer closes.
+            with sendContext as reader:
+                checkBefore = None
+                if hasattr(writer, 'skipChunk'):
+                    checkBefore = hasattr(reader, 'checkSum')
+
+                while True:
+                    if checkBefore is True:
+                        (size, checkSum) = reader.checkSum(chunkSize)
+
+                        if writer.skipChunk(size, checkSum):
+                            reader.seek(size, io.SEEK_CUR)
+                            continue
+
+                    data = reader.read(chunkSize)
+                    if len(data) == 0:
+                        break
+
+                    if checkBefore is False:
+                        checkSum = hashlib.md5(data).hexdigest()
+
+                        if writer.skipChunk(len(data), checkSum, data):
+                            continue
+
+                    writer.write(data)
+
+
 class Diff:
 
     """ Represents a btrfs send diff that creates toVol from fromVol. """
@@ -254,44 +298,7 @@ class Diff:
         # except AttributeError:
         #     pass
 
-        try:
-            receiveContext.progress = progress
-        except AttributeError:
-            pass
-
-        try:
-            chunkSize = receiveContext.chunkSize
-        except AttributeError:
-            pass
-
-        if sendContext is not None and receiveContext is not None:
-            with receiveContext as writer:
-                # Open reader after writer,
-                # so any raised errors will abort write before writer closes.
-                with sendContext as reader:
-                    checkBefore = None
-                    if hasattr(writer, 'skipChunk'):
-                        checkBefore = hasattr(reader, 'checkSum')
-
-                    while True:
-                        if checkBefore is True:
-                            (size, checkSum) = reader.checkSum(chunkSize)
-
-                            if writer.skipChunk(size, checkSum):
-                                reader.seek(size, io.SEEK_CUR)
-                                continue
-
-                        data = reader.read(chunkSize)
-                        if len(data) == 0:
-                            break
-
-                        if checkBefore is False:
-                            checkSum = hashlib.md5(data).hexdigest()
-
-                            if writer.skipChunk(len(data), checkSum, data):
-                                continue
-
-                        writer.write(data)
+        transfer(sendContext, receiveContext, chunkSize, progress)
 
         if vol.hasInfo():
             infoContext = dest.receiveVolumeInfo(paths)
@@ -325,7 +332,7 @@ class Diff:
         )
 
 
-class Volume:
+    class Volume:
 
     """ Represents a snapshot. """
 
@@ -350,19 +357,23 @@ class Volume:
         """ Read-only uuid. """
         return self._uuid
 
+    def writeInfoLine(self, stream, fromUUID, size):
+        """ Write one line of diff information. """
+        if size is None or fromUUID is None:
+            continue
+        if not isinstance(size, int):
+            logger.warning("Bad size: %s", size)
+            continue
+        stream.write(str("%s\t%s\t%d\n" % (
+            self.uuid,
+            fromUUID,
+            size,
+        )))
+
     def writeInfo(self, stream):
         """ Write information about diffs into a file stream for use later. """
         for (fromUUID, size) in Diff.theKnownSizes[self.uuid].iteritems():
-            if size is None or fromUUID is None:
-                continue
-            if not isinstance(size, int):
-                logger.warning("Bad size: %s", size)
-                continue
-            stream.write(str("%s\t%s\t%d\n" % (
-                self.uuid,
-                fromUUID,
-                size,
-            )))
+            self.writeInfoLine(stream, fromUUID, size)
 
     def hasInfo(self):
         """ Will have information to write. """
@@ -408,16 +419,16 @@ class Volume:
 
         if detail >= detailNum['line'] and self.size is not None:
             size = " (%s%s)" % (
-                printBytes(self.size),
+                humanize(self.size),
                 "" if self.exclusiveSize is None else (
-                    " %s exclusive" % (printBytes(self.exclusiveSize))
+                    " %s exclusive" % (humanize(self.exclusiveSize))
                 )
             )
         else:
             size = ""
 
         vol = "%s %s" % (
-            printUUID(self._uuid, detail - 1),
+            _printUUID(self._uuid, detail - 1),
             sink.getSendPath(self) if sink else "",
         )
 
@@ -445,26 +456,7 @@ def display(obj, detail='phrase'):
         return str(obj)
 
 
-def printBytes(number):
-    """ Return a human-readable string for number. """
-    return humanize(number)
-
-
-def humanize(number):
-    """ Return a human-readable string for number. """
-    # units = ('bytes', 'KB', 'MB', 'GB', 'TB')
-    # base = 1000
-    units = ('bytes', 'KiB', 'MiB', 'GiB', 'TiB')
-    base = 1024
-    if number is None:
-        return None
-    pow = int(math.log(number, base)) if number > 0 else 0
-    pow = min(pow, len(units) - 1)
-    mantissa = number / (base ** pow)
-    return "%.4g %s" % (mantissa, units[pow])
-
-
-def printUUID(uuid, detail='word'):
+def _printUUID(uuid, detail='word'):
     """ Return friendly abbreviated string for uuid. """
     if not isinstance(detail, int):
         detail = detailNum[detail]

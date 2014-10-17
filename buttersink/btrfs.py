@@ -7,31 +7,16 @@
 # This is NOT a complete implementation,
 # just a few useful routines for my current project.
 
-from __future__ import division
-
 from ioctl import Structure, t
+from util import pretty, humanize
+
 import collections
 import ioctl
 import logging
-import math
 import os.path
-import pprint
+
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
-
-
-def pretty(obj):
-    """ Return pretty representation of obj. """
-    # if True:
-    #     return pprint.pformat(dict(obj.__dict__))
-    return pprint.pformat(obj)
-    # try:
-    #     return pprint.pformat(dict(obj))
-    # except TypeError:
-    #     try:
-    #         return pprint.pformat(obj.__dict__)
-    #     except KeyError:
-    #         logger.exception("Funny error.")
 
 
 def bytes2uuid(b):
@@ -353,20 +338,6 @@ BTRFS_ROOT_SUBVOL_RDONLY = (1 << 0)
 BTRFS_ROOT_TREE_OBJECTID = 1
 BTRFS_FS_TREE_OBJECTID = 5
 BTRFS_QUOTA_TREE_OBJECTID = 8
-
-
-def humanize(number):
-    """ Return a human-readable string for number. """
-    # units = ('bytes', 'KB', 'MB', 'GB', 'TB')
-    # base = 1000
-    units = ('bytes', 'KiB', 'MiB', 'GiB', 'TiB')
-    base = 1024
-    if number is None:
-        return None
-    pow = int(math.log(number, base)) if number > 0 else 0
-    pow = min(pow, len(units) - 1)
-    mantissa = number / (base ** pow)
-    return "%.4g %s" % (mantissa, units[pow])
 
 
 class Volume(object):
