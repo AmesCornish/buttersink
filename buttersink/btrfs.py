@@ -174,10 +174,10 @@ btrfs_root_item = Structure(
     (t.u8, 'uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),
     (t.u8, 'parent_uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),
     (t.u8, 'received_uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),
-    (t.le64, 'ctransid'),
-    (t.le64, 'otransid'),
-    (t.le64, 'stransid'),
-    (t.le64, 'rtransid'),
+    (t.le64, 'ctransid'),  # updated when an inode changes
+    (t.le64, 'otransid'),  # trans when created
+    (t.le64, 'stransid'),  # trans when sent. non-zero for received subvol
+    (t.le64, 'rtransid'),  # trans when received. non-zero for received subvol
     (btrfs_timespec, 'ctime'),
     (btrfs_timespec, 'otime'),
     (btrfs_timespec, 'stime'),
@@ -351,14 +351,15 @@ class Volume(object):
         """ Initialize. """
         # logger.debug("Volume %d: %s", id, pretty(info))
         self.id = rootid  # id in BTRFS_ROOT_TREE_OBJECTID, also FS treeid for this volume
-        self.original_gen = generation
-        self.current_gen = info.generation
+        self.original_gen = info.generation
+        self.current_gen = generation
         # self.size = info.bytes_used
         self.readOnly = bool(info.flags & BTRFS_ROOT_SUBVOL_RDONLY)
         self.level = info.level
         self.uuid = info.uuid
         self.parent_uuid = info.parent_uuid
         self.received_uuid = info.received_uuid
+        self.sent_gen = info.stransid
 
         self.totalSize = None
         self.exclusiveSize = None
@@ -411,8 +412,8 @@ class Volume(object):
         """ String representation. """
         # logger.debug("%d %d %d", self.gen, self.info.generation, self.info.inode.generation)
         # logger.debug("%o %o", self.info.flags, self.info.inode.flags)
-        return """%4d '%s' (level:%d gen:%d total:%s exclusive:%s%s)
-        %s (parent:%s received:%s)
+        return """%4d '%s' (level:%d gen:%d total:%s exclusive:%s%s) %s
+        (parent:%s/%d received:%s/%d)
         %s%s""" % (
             self.id or -1,
             # ", ".join([dirPath + name for (dirPath, name) in self.links.values()]),
@@ -424,8 +425,8 @@ class Volume(object):
             humanize(self.exclusiveSize or -1),
             " ro" if self.readOnly else "",
             self.uuid,
-            self.parent_uuid,
-            self.received_uuid,
+            self.parent_uuid, self.original_gen,
+            self.received_uuid, self.sent_gen,
             "\n\t".join(self.linuxPaths),
             # "\n\t" + pretty(self.__dict__),
             "",
@@ -591,16 +592,15 @@ class FileSystem(ioctl.Device):
                 break
 
             for _ in xrange(results):
-                assert buf.len >= btrfs_ioctl_search_header.size, buf.len
+                # assert buf.len >= btrfs_ioctl_search_header.size, buf.len
                 data = buf.read(btrfs_ioctl_search_header)
 
                 # logger.debug("Object %d: %s", i, pretty(data))
 
-                assert buf.len >= data.len, (buf.len, data.len)
+                # assert buf.len >= data.len, (buf.len, data.len)
                 yield (data, buf.view(data.len))
 
                 key = FileSystem.Key(data.objectid, data.type, data.offset).next()
-                buf.skip(data.len)
 
     def _getRoots(self):
         for (header, buf) in self._walkTree(BTRFS_ROOT_TREE_OBJECTID):

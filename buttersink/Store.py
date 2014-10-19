@@ -4,8 +4,6 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 """
 
-from __future__ import division
-
 from util import humanize
 
 import abc
@@ -14,7 +12,6 @@ import functools
 import hashlib
 import io
 import logging
-import math
 import os.path
 import sys
 
@@ -259,6 +256,16 @@ class Diff:
         return self.fromVol.uuid if self.fromVol else None
 
     @property
+    def toGen(self):
+        """ 'to' volume's transid. """
+        return self.toVol.gen
+
+    @property
+    def fromGen(self):
+        """ 'from' volume's transid. """
+        return self.fromVol.gen if self.fromVol else None
+
+    @property
     def size(self):
         """ Return size. """
         self._updateSize()
@@ -332,11 +339,11 @@ class Diff:
         )
 
 
-    class Volume:
+class Volume:
 
     """ Represents a snapshot. """
 
-    def __init__(self, uuid, size=None, exclusiveSize=None, gen=None):
+    def __init__(self, uuid, gen, size=None, exclusiveSize=None):
         """ Initialize. """
         assert uuid is not None
         self._uuid = uuid  # Must never change!
@@ -360,10 +367,10 @@ class Diff:
     def writeInfoLine(self, stream, fromUUID, size):
         """ Write one line of diff information. """
         if size is None or fromUUID is None:
-            continue
+            return
         if not isinstance(size, int):
             logger.warning("Bad size: %s", size)
-            continue
+            return
         stream.write(str("%s\t%s\t%d\n" % (
             self.uuid,
             fromUUID,
@@ -442,7 +449,7 @@ class Diff:
         elif vol is None:
             return None
         else:
-            return cls(vol)
+            return cls(vol, None)   # FIX: We need a gen!
 
 detailTypes = ('word', 'phrase', 'line', 'paragraph')
 detailNum = {t: n for (n, t) in zip(xrange(len(detailTypes)), detailTypes)}

@@ -54,10 +54,17 @@ class ButterStore(Store.Store):
         self._fillVolumesAndPaths()
 
     def _btrfsVol2StoreVol(self, bvol):
-        uuid = bvol.received_uuid or bvol.uuid
+        if bvol.received_uuid is not None:
+            uuid = bvol.received_uuid
+            gen = bvol.sent_gen
+        else:
+            uuid = bvol.uuid
+            gen = bvol.current_gen
+
         if uuid is None:
             return None
-        return Store.Volume(uuid, bvol.totalSize, bvol.exclusiveSize, bvol.current_gen)
+
+        return Store.Volume(uuid, gen, bvol.totalSize, bvol.exclusiveSize)
 
     def _fillVolumesAndPaths(self):
         """ Fill in self.paths. """
@@ -78,7 +85,6 @@ class ButterStore(Store.Store):
 
                 relPath = None
 
-                # vol = Store.Volume(uuid, bv.totalSize, bv.exclusiveSize, bv.gen)
                 for path in bv.linuxPaths:
                     path = self._relativePath(path)
 
@@ -169,7 +175,12 @@ class ButterStore(Store.Store):
 
         path = self.selectReceivePath(paths)
 
-        return self.butter.receive(path)
+        if os.path.exists(path):
+            raise Exception(
+                "Path %s exists, can't receive %s" % (path, diff.toUUID)
+                )
+
+        return self.butter.receive(path, diff)
 
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
@@ -198,6 +209,7 @@ class ButterStore(Store.Store):
         sendContext = self.butter.send(
             self.getSendPath(diff.toVol),
             self.getSendPath(diff.fromVol),
+            diff,
             allowDryRun=False,
         )
 
@@ -270,6 +282,7 @@ class ButterStore(Store.Store):
         return self.butter.send(
             self.getSendPath(diff.toVol),
             self.getSendPath(diff.fromVol),
+            diff,
         )
 
     def keep(self, diff):

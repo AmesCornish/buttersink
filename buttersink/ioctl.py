@@ -232,10 +232,11 @@ class Buffer:
 
     """ Contains bytes and an offset. """
 
-    def __init__(self, buf, offset=0):
+    def __init__(self, buf, offset=0, newLength=None):
         """ Initialize. """
         self.buf = buf
         self.offset = offset
+        self._len = (newLength + offset) if newLength else len(buf)
 
     def read(self, structure):
         """ Read and advance. """
@@ -243,18 +244,26 @@ class Buffer:
         self.skip(structure.size)
         return structure.read(self.buf, start)
 
-    def skip(self, len):
+    def skip(self, length):
         """ Advance. """
-        self.offset += len
+        self.offset += length
 
-    def view(self, len):
-        """ Return a view of the next len bytes. """
-        return memoryview(self.buf)[self.offset:self.offset + len]
+    def view(self, newLength):
+        """ Return a view of the next newLength bytes. """
+        result = memoryview(self.buf)[self.offset:self.offset + newLength]
+        self.skip(newLength)
+        return result
+
+    def buf(self, newLength):
+        """ Read next chunk as another buffer. """
+        result = Buffer(self.buf, self.offset, self.newLength)
+        self.skip(newLength)
+        return result
 
     @property
     def len(self):
         """ Count of remaining bytes. """
-        return len(self.buf) - self.offset
+        return self._len - self.offset
 
 
 class Control:
