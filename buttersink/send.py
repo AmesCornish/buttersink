@@ -2,17 +2,22 @@
 
 # Docs: See btrfs-progs/send-utils.c, btrfs-progs/send.h
 
-import btrfs
-
 from ioctl import Structure, t
+import btrfs
 import ioctl
+
+# import binascii  # This provides "zip" crc
+# import crc32c  # This provides *slow* btrfs crc32c
+import crcmod.predefined  # This provides fast compiled extension
+crc32c = crcmod.predefined.mkPredefinedCrcFun("crc-32c")
+
 import logging
 import struct
 
 logger = logging.getLogger(__name__)
-logger.setLevel('DEBUG')
+# logger.setLevel('DEBUG')
 
-BTRFS_SEND_STREAM_MAGIC = "btrfs-stream"
+BTRFS_SEND_STREAM_MAGIC = "btrfs-stream\0"
 BTRFS_SEND_STREAM_VERSION = 1
 
 btrfs_stream_header = Structure(
@@ -122,27 +127,28 @@ class ParseException(Exception):
 def TLV_GET(attrs, attrNum, format):
     """ Get a tag-length-value encoded attribute. """
     attrView = attrs[attrNum]
-    (result,) = struct.unpack_from(format, attrView)
+    if format == 's':
+        format = str(attrView.len) + format
+    (result,) = struct.unpack_from(format, attrView.buf, attrView.offset)
     return result
 
 
 def TLV_PUT(attrs, attrNum, format, value):
     """ Put a tag-length-value encoded attribute. """
     attrView = attrs[attrNum]
-    struct.pack_into(format, attrView, 0, value)
+    if format == 's':
+        format = str(attrView.len) + format
+    struct.pack_into(format, attrView.buf, attrView.offset, value)
 
 
 def TLV_GET_BYTES(attrs, attrNum):
     """ Get a tag-length-value encoded attribute as bytes. """
-    attrView = attrs[attrNum]
-    (result,) = struct.unpack_from("%ds" % (len(attrView)), attrView)
-    return result
+    return TLV_GET(attrs, attrNum, 's')
 
 
 def TLV_PUT_BYTES(attrs, attrNum, value):
     """ Put a tag-length-value encoded attribute as bytes. """
-    attrView = attrs[attrNum]
-    struct.pack_into("%ds" % (len(attrView)), attrView, 0, value)
+    TLV_PUT(attrs, attrNum, 's', value)
 
 
 def TLV_GET_STRING(attrs, attrNum):
@@ -162,6 +168,8 @@ def TLV_GET_U64(attrs, attrNum):
 
 def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
     """ Parse and replace UUID and transid info in data stream. """
+    data = bytearray(data)  # Make data writable
+
     buf = ioctl.Buffer(data)
     header = buf.read(btrfs_stream_header)
 
@@ -171,36 +179,100 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
     logger.debug("Version: %d", header.version)
 
     if header.version > BTRFS_SEND_STREAM_VERSION:
-        logger.warn("Unknown stream version %d", header.version)
+        logger.warn("Unknown stream version: %d", header.version)
 
-    header = buf.read(btrfs_cmd_header)
+    cmdHeaderView = buf.peekView(btrfs_cmd_header.size)
+    cmdHeader = buf.read(btrfs_cmd_header)
 
-    logger.debug("Command: %d", header.cmd)
+    logger.debug("Command: %d", cmdHeader.cmd)
 
     # Read the attributes
 
     attrs = {}
-    attrData = buf.buf(header.len)
+    attrDataView = buf.peekView(cmdHeader.len)
+    attrData = buf.readBuffer(cmdHeader.len)
 
     while attrData.len > 0:
         attrHeader = attrData.read(btrfs_tlv_header)
-        attrs[attrHeader.tlv_type] = attrData.view(attrHeader.tlv_len)
+        attrs[attrHeader.tlv_type] = attrData.readBuffer(attrHeader.tlv_len)
+
+    def calcCRC():
+        header = vars(cmdHeader)
+        header['crc'] = 0
+
+        # This works, but is slow
+        # crc = crc32c.CRC_INIT ^ crc32c._MASK
+        # crc = crc32c.crc_update(crc, btrfs_cmd_header.write(header))
+        # crc = crc32c.crc_update(crc, attrDataView)
+        # crc = crc32c.crc_finalize(crc)
+        # crc = crc ^ crc32c._MASK
+
+        # This works, and can be fast, when it used compiled extension
+        crc = 0 ^ 0xffffffff
+        crc = crc32c(btrfs_cmd_header.write(header), crc)
+        crc = crc32c(attrDataView.tobytes(), crc)
+        crc &= 0xffffffff
+        crc = crc ^ 0xffffffff
+
+        # This does *not* work
+        # crc = 0 ^ 0xffffffff
+        # crc = binascii.crc32(btrfs_cmd_header.write(header), crc)
+        # crc = binascii.crc32(attrDataView, crc)
+        # crc &= 0xffffffff
+        # crc ^= 0xffffffff
+
+        return crc
+
+    crc = calcCRC()
+    if cmdHeader.crc != crc:
+        logger.warn(
+            "Stored crc (%d) doesn't match calculated crc (%d)",
+            cmdHeader.crc, crc,
+            )
 
     # Dispatch based on cmd and attributes
 
     s = attrs
 
-    if header.cmd == BTRFS_SEND_C_SUBVOL:
+    def correct(attr, format, name, old, new, encode=None):
+        if new is not None and new != old:
+            logger.warn("Correcting %s from %s to %s", name, str(old), str(new))
+            if encode is not None:
+                new = encode(new)
+            TLV_PUT(attrs, attr, format, new)
+
+    def correctCRC():
+        crc = calcCRC()
+        if cmdHeader.crc != crc:
+            logger.warn("Correcing CRC from %d to %d", cmdHeader.crc, crc)
+            header = vars(cmdHeader)
+            header['crc'] = crc
+            cmdHeaderView[:] = btrfs_cmd_header.write(header).tostring()
+
+    if cmdHeader.cmd == BTRFS_SEND_C_SUBVOL:
         path = TLV_GET_STRING(s, BTRFS_SEND_A_PATH, )
         uuid = TLV_GET_UUID(s, BTRFS_SEND_A_UUID, )
         ctransid = TLV_GET_U64(s, BTRFS_SEND_A_CTRANSID, )
 
         logger.debug('Subvol: %s/%d %s', uuid, ctransid, path)
 
-        TLV_PUT_BYTES(attrs, BTRFS_SEND_A_UUID, btrfs.uuid2bytes(receivedUUID))
-        TLV_PUT(attrs, BTRFS_SEND_A_UUID, t.u64, receivedGen)
+        correct(
+            BTRFS_SEND_A_UUID,
+            's',
+            'received UUID',
+            uuid,
+            receivedUUID,
+            btrfs.uuid2bytes
+        )
+        correct(
+            BTRFS_SEND_A_CTRANSID,
+            t.u64,
+            'received gen',
+            ctransid,
+            receivedGen
+        )
 
-    elif header.cmd == BTRFS_SEND_C_SNAPSHOT:
+    elif cmdHeader.cmd == BTRFS_SEND_C_SNAPSHOT:
         path = TLV_GET_STRING(s, BTRFS_SEND_A_PATH, )
         uuid = TLV_GET_UUID(s, BTRFS_SEND_A_UUID, )
         ctransid = TLV_GET_U64(s, BTRFS_SEND_A_CTRANSID, )
@@ -210,12 +282,42 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
         logger.debug(
             'Snapshot: %s/%d -> %s/%d %s',
             clone_uuid, clone_ctransid, uuid, ctransid, path
-            )
+        )
 
-        TLV_PUT_BYTES(attrs, BTRFS_SEND_A_UUID, btrfs.uuid2bytes(receivedUUID))
-        TLV_PUT(attrs, BTRFS_SEND_A_UUID, t.u64, receivedGen)
-        TLV_PUT_BYTES(attrs, BTRFS_SEND_A_CLONE_UUID, btrfs.uuid2bytes(parentUUID))
-        TLV_PUT(attrs, BTRFS_SEND_A_CLONE_CTRANSID, t.u64, parentGen)
+        correct(
+            BTRFS_SEND_A_UUID,
+            's',
+            'received UUID',
+            uuid,
+            receivedUUID,
+            btrfs.uuid2bytes
+        )
+        correct(
+            BTRFS_SEND_A_CTRANSID,
+            t.u64,
+            'received gen',
+            ctransid,
+            receivedGen
+        )
 
+        correct(
+            BTRFS_SEND_A_CLONE_UUID,
+            's',
+            'parent UUID',
+            clone_uuid,
+            parentUUID,
+            btrfs.uuid2bytes
+        )
+        correct(
+            BTRFS_SEND_A_CLONE_CTRANSID,
+            t.u64,
+            'parent gen',
+            clone_ctransid,
+            parentGen
+        )
     else:
         logger.warn("Didn't find volume UUID command")
+
+    correctCRC()
+
+    return data

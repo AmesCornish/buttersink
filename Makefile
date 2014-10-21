@@ -63,6 +63,7 @@ TEST_DIR=/mnt/butter/bs-test
 TEST_BUCKET=butter-sink
 
 # Count of 100K chunks:
+# If this is more then 5Meg, it will trigger a multipart upload
 TEST_DATA_COUNT=60
 BS_LINE="\t1b40ccc7-f2cc-5e45-bca6-d74c6ffc31c4\t103350"
 
@@ -105,11 +106,11 @@ ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 
 define CLEAN_TEST
 	sudo sync
-	sudo btrfs sub del ${TEST_DIR}/snaps/* || true
-	sudo rm ${TEST_DIR}/snaps/* || true
-	sudo btrfs sub del ${TEST_DIR}/restore/* || true
-	sudo rm ${TEST_DIR}/restore/* || true
-	sudo rm ${TEST_DIR}/*.dat ${TEST_DIR}/sha256sum.txt || true
+	sudo btrfs sub del ${TEST_DIR}/snaps/* 2>/dev/null || true
+	sudo rm ${TEST_DIR}/snaps/* 2>/dev/null || true
+	sudo btrfs sub del ${TEST_DIR}/restore/* 2>/dev/null || true
+	sudo rm ${TEST_DIR}/restore/* 2>/dev/null || true
+	sudo rm ${TEST_DIR}/*.dat ${TEST_DIR}/sha256sum.txt 2>/dev/null || true
 endef
 
 .PHONY : clean_test
@@ -118,7 +119,7 @@ clean_test :
 	sudo rm ${LOGFILE} || true
 	rm makestamps/test_* || true
 
-makestamps/test_restore : SNAP=B
+makestamps/test_restore : SNAP=C
 makestamps/test_restore : makestamps/test_backup | ${TEST_DIR}/restore
 	$(CLEAN_TEST)
 	sudo sync

@@ -219,6 +219,7 @@ class ButterStore(Store.Store):
 
             def __enter__(self):
                 self.totalSize = 0
+                return self
 
             def __exit__(self, exceptionType, exceptionValue, traceback):
                 return False  # Don't supress exception
@@ -229,14 +230,14 @@ class ButterStore(Store.Store):
             def write(self, bytes):
                 self.totalSize += len(bytes)
 
-        logger.warn("Measuring %s...", diff)
+        logger.info("Measuring %s", diff)
 
         measure = _Measure()
         Store.transfer(sendContext, measure, theChunkSize, False)
 
         diff.setSize(measure.totalSize, False)
 
-        logger.info("... %s", Store.humanize(measure.totalSize))
+        logger.info("measured %s", Store.humanize(measure.totalSize))
 
         for path in self.getPaths(diff.toVol):
             path = self._fullPath(path) + Store.theInfoExtension

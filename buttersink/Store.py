@@ -13,7 +13,6 @@ import hashlib
 import io
 import logging
 import os.path
-import sys
 
 theInfoExtension = ".bs"
 
@@ -311,7 +310,8 @@ class Diff:
             infoContext = dest.receiveVolumeInfo(paths)
 
             if infoContext is None:
-                vol.writeInfo(sys.stdout)
+                # vol.writeInfo(sys.stdout)
+                pass
             else:
                 with infoContext as stream:
                     vol.writeInfo(stream)
@@ -486,9 +486,12 @@ def skipDryRun(logger, dryRun, level=logging.DEBUG):
     # logging.getLevelName() also maps names to numbers
     if not isinstance(level, int):
         level = logging.getLevelName(level)
-    return _skipRun if dryRun else functools.partial(logger.log, level)
+    return (
+        functools.partial(_skipRun, logger) if dryRun
+        else functools.partial(logger.log, level)
+        )
 
 
-def _skipRun(format, *args):
-    print("WOULD: " + format % args)
+def _skipRun(logger, format, *args):
+    logger.debug("WOULD: " + format % args)
     return True

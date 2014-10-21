@@ -248,20 +248,30 @@ class Buffer:
         """ Advance. """
         self.offset += length
 
-    def view(self, newLength):
-        """ Return a view of the next newLength bytes. """
-        result = memoryview(self.buf)[self.offset:self.offset + newLength]
+    def readView(self, newLength):
+        """ Return a view of the next newLength bytes, and skip it. """
+        result = self.peekView(newLength)
         self.skip(newLength)
         return result
 
-    def buf(self, newLength):
+    def peekView(self, newLength):
+        """ Return a view of the next newLength bytes. """
+        # Note: In Python 2.7, memoryviews can't be written to
+        # by the struct module. (BUG)
+        return memoryview(self.buf)[self.offset:self.offset + newLength]
+
+    def readBuffer(self, newLength):
         """ Read next chunk as another buffer. """
-        result = Buffer(self.buf, self.offset, self.newLength)
+        result = Buffer(self.buf, self.offset, newLength)
         self.skip(newLength)
         return result
 
     @property
     def len(self):
+        """ Count of remaining bytes. """
+        return self._len - self.offset
+
+    def __len__(self):
         """ Count of remaining bytes. """
         return self._len - self.offset
 

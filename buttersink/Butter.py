@@ -152,7 +152,7 @@ class _Writer(io.RawIOBase):
         # If it's the first big chunk (header)
         # Tweak the volume information to match what we expect.
         if FIXUP_DURING_RECEIVE and self.bytesWritten == 0:
-            send.replaceIDs(
+            data = send.replaceIDs(
                 data,
                 self.diff.toUUID,
                 self.diff.toGen,
@@ -198,7 +198,7 @@ class _Reader(io.RawIOBase):
         # Tweak the volume information to match what we expect.
         data = self.stream.read(size)
         if FIXUP_DURING_SEND and self.bytesRead == 0:
-            send.replaceIDs(
+            data = send.replaceIDs(
                 data,
                 self.diff.toUUID,
                 self.diff.toGen,

@@ -349,10 +349,10 @@ class Volume(object):
 
     def __init__(self, rootid, generation, info):
         """ Initialize. """
-        # logger.debug("Volume %d: %s", id, pretty(info))
+        logger.debug("Volume %d/%d: %s", rootid, generation, pretty(info))
         self.id = rootid  # id in BTRFS_ROOT_TREE_OBJECTID, also FS treeid for this volume
-        self.original_gen = info.generation
-        self.current_gen = generation
+        self.original_gen = info.otransid
+        self.current_gen = info.ctransid
         # self.size = info.bytes_used
         self.readOnly = bool(info.flags & BTRFS_ROOT_SUBVOL_RDONLY)
         self.level = info.level
@@ -598,7 +598,7 @@ class FileSystem(ioctl.Device):
                 # logger.debug("Object %d: %s", i, pretty(data))
 
                 # assert buf.len >= data.len, (buf.len, data.len)
-                yield (data, buf.view(data.len))
+                yield (data, buf.readView(data.len))
 
                 key = FileSystem.Key(data.objectid, data.type, data.offset).next()
 
