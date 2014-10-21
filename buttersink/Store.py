@@ -293,18 +293,17 @@ class Diff:
 
         if self.sink == dest:
             self.sink.keep(self)
-            return
+        else:
+            receiveContext = dest.receive(self, paths)
 
-        receiveContext = dest.receive(self, paths)
+            sendContext = self.sink.send(self, progress)
 
-        sendContext = self.sink.send(self, progress)
+            # try:
+            #     receiveContext.metadata['btrfsVersion'] = self.btrfsVersion
+            # except AttributeError:
+            #     pass
 
-        # try:
-        #     receiveContext.metadata['btrfsVersion'] = self.btrfsVersion
-        # except AttributeError:
-        #     pass
-
-        transfer(sendContext, receiveContext, chunkSize, progress)
+            transfer(sendContext, receiveContext, chunkSize, progress)
 
         if vol.hasInfo():
             infoContext = dest.receiveVolumeInfo(paths)

@@ -244,7 +244,7 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
     def correctCRC():
         crc = calcCRC()
         if cmdHeader.crc != crc:
-            logger.warn("Correcing CRC from %d to %d", cmdHeader.crc, crc)
+            logger.warn("Correcting CRC from %d to %d", cmdHeader.crc, crc)
             header = vars(cmdHeader)
             header['crc'] = crc
             cmdHeaderView[:] = btrfs_cmd_header.write(header).tostring()
