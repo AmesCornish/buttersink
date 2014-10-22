@@ -213,9 +213,9 @@ class ButterStore(Store.Store):
         )
 
         class _Measure(io.RawIOBase):
-            def __init__(self):
+            def __init__(self, estimatedSize):
                 self.totalSize = None
-                self.progress = progress.DisplayProgress()
+                self.progress = progress.DisplayProgress(estimatedSize)
 
             def __enter__(self):
                 self.totalSize = 0
@@ -235,12 +235,10 @@ class ButterStore(Store.Store):
 
         logger.info("Measuring %s", diff)
 
-        measure = _Measure()
+        measure = _Measure(diff.size)
         Store.transfer(sendContext, measure, chunkSize)
 
         diff.setSize(measure.totalSize, False)
-
-        logger.info("measured %s", Store.humanize(measure.totalSize))
 
         for path in self.getPaths(diff.toVol):
             path = self._fullPath(path) + Store.theInfoExtension
