@@ -507,7 +507,12 @@ class FileSystem(ioctl.Device):
         self.devices = []
         fs = self.FS_INFO()
         for i in xrange(1, fs.num_devices + 1):
-            dev = self.DEV_INFO(devid=i)
+            try:
+                dev = self.DEV_INFO(devid=i)
+            except IOError as error:
+                if error.errno == 19:
+                    continue
+                raise
             self.devices.append(dev.path)
 
     def _getMounts(self):
