@@ -24,7 +24,7 @@ class DisplayProgress(object):
     def __enter__(self):
         """ For with statement. """
         self.startTime = datetime.datetime.now()
-        self.update(0)
+        self.offset = 0
         return self
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
@@ -40,7 +40,7 @@ class DisplayProgress(object):
 
         elapsed = (now - self.startTime).total_seconds()
         if elapsed > 0:
-            mbps = (sent * 8 / (10 ** 6) / elapsed)
+            mbps = (sent * 8 / (10 ** 6)) / elapsed
         else:
             mbps = None
 

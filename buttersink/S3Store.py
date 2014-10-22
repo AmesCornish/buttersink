@@ -312,7 +312,7 @@ class _Downloader(io.RawIOBase):
         else:
             headers = {"Range": "bytes=%s-%s" % (self.mark, self.mark + n - 1)}
 
-        progress = _BotoProgress(None, "Range", self.progress, suppress=(self.progress is None))
+        progress = _BotoProgress(n, "Range", self.progress, suppress=(self.progress is None))
         with progress:
             data = self.key.get_contents_as_string(
                 headers,
