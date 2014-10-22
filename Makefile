@@ -64,7 +64,7 @@ TEST_BUCKET=butter-sink
 
 # Count of 100K chunks:
 # If this is more then 5Meg, it will trigger a multipart upload
-TEST_DATA_COUNT=60
+TEST_DATA_COUNT=2
 BS_LINE="\t1b40ccc7-f2cc-5e45-bca6-d74c6ffc31c4\t103350"
 
 DEBUG_CODE=^[^\#]*logger\.setLevel\(|^theDebug = True|pudb

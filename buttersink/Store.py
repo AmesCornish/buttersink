@@ -188,13 +188,8 @@ class Store(object):
         raise NotImplementedError
 
 
-def transfer(sendContext, receiveContext, chunkSize, progress=True):
+def transfer(sendContext, receiveContext, chunkSize):
     """ Transfer (large) data from sender to receiver. """
-    try:
-        receiveContext.progress = progress
-    except AttributeError:  # FIX: This will never get thrown
-        pass
-
     try:
         chunkSize = receiveContext.chunkSize
     except AttributeError:
@@ -303,7 +298,7 @@ class Diff:
             # except AttributeError:
             #     pass
 
-            transfer(sendContext, receiveContext, chunkSize, progress)
+            transfer(sendContext, receiveContext, chunkSize)
 
         if vol.hasInfo():
             infoContext = dest.receiveVolumeInfo(paths)

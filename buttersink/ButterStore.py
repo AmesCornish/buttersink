@@ -8,6 +8,7 @@ from __future__ import division
 
 import btrfs
 import Butter
+import progress
 import Store
 
 import io
@@ -216,12 +217,15 @@ class ButterStore(Store.Store):
         class _Measure(io.RawIOBase):
             def __init__(self):
                 self.totalSize = None
+                self.progress = progress.DisplayProgress()
 
             def __enter__(self):
                 self.totalSize = 0
+                self.progress.__enter__()
                 return self
 
             def __exit__(self, exceptionType, exceptionValue, traceback):
+                self.progress.__exit__(exceptionType, exceptionValue, traceback)
                 return False  # Don't supress exception
 
             def writable(self):
@@ -229,11 +233,12 @@ class ButterStore(Store.Store):
 
             def write(self, bytes):
                 self.totalSize += len(bytes)
+                self.progress.update(self.totalSize)
 
         logger.info("Measuring %s", diff)
 
         measure = _Measure()
-        Store.transfer(sendContext, measure, theChunkSize, False)
+        Store.transfer(sendContext, measure, theChunkSize)
 
         diff.setSize(measure.totalSize, False)
 

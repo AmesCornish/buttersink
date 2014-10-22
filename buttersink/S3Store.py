@@ -6,21 +6,18 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 # Docs: http://boto.readthedocs.org/en/latest/
 
-from __future__ import division
-
 if True:  # Imports and constants
     if True:  # Imports
+        import progress
         import Store
+        import util
 
         import boto
         import collections
-        import datetime
         import io
         import logging
         import os.path
         import re
-        import sys
-        import traceback
     if True:  # Constants
         # Maximum xumber of progress reports per chunk
         theProgressCount = 50
@@ -40,8 +37,7 @@ if True:  # Imports and constants
 
 def _displayTraceBack():
     return ""
-    tb = traceback.format_stack()
-    return "\n" + "".join(tb[:-1])
+    util.displayTraceBack()
 
 
 class S3Store(Store.Store):
@@ -184,7 +180,7 @@ class S3Store(Store.Store):
         if self._skipDryRun(logger)("receive %s in %s", keyName, self):
             return None
 
-        return _Uploader(self.bucket, keyName)
+        return _Uploader(self.bucket, keyName, _BotoProgress(diff.size))
 
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
@@ -224,7 +220,7 @@ class S3Store(Store.Store):
         if self._skipDryRun(logger)("send %s in %s", keyName, self):
             return None
 
-        return _Downloader(key, progress)
+        return _Downloader(key, _BotoProgress(diff.size, suppress=(not progress)))
 
     def keep(self, diff):
         """ Mark this diff (or volume) to be kept in path. """
@@ -273,89 +269,58 @@ class S3Store(Store.Store):
         self._flushPartialUploads(self.dryrun)
 
 
-class _DisplayProgress:
+class _BotoProgress(progress.DisplayProgress):
 
-    def __init__(self):
-        self.startTime = datetime.datetime.now()
+    def __init__(self, total=None, chunkName=None, parent=None, suppress=False):
+        super(_BotoProgress, self).__init__(total, chunkName, parent)
         self.numCallBacks = theProgressCount
-        self.offset = 0
+        self.suppress = suppress
 
     def __call__(self, sent, total):
-        if not sys.stdout.isatty():
-            return
+        self.total = total
+        if not self.suppress:
+            self.update(sent)
 
-        sent += self.offset
-
-        elapsed = datetime.datetime.now() - self.startTime
-        mbps = (sent * 8 / (10 ** 6) / elapsed.total_seconds())
-
-        if sent > 0:
-            eta = (total - sent) * elapsed.total_seconds() / sent
-            eta = datetime.timedelta(seconds=eta)
-        else:
-            eta = None
-
-        sys.stdout.write(
-            "\r %s: Sent %s of %s (%d%%) (%.3g Mbps) ETA: %s %20s\r" % (
-                elapsed,
-                Store.humanize(sent),
-                Store.humanize(total),
-                int(100 * sent / total),
-                mbps,
-                eta,
-                " ",
-            )
-        )
-
-        sys.stdout.flush()
-
-    def endChunk(self, chunkSize):
-        self.offset += chunkSize
-
-    def close(self):
-        if not sys.stdout.isatty():
-            return
-        sys.stdout.write("\n")
-
-    @property
+    @staticmethod
     def botoArgs(self):
-        return (self, self.numCallBacks)
+        if self is not None and not self.suppress:
+            return {'cb': self, 'num_cb': self.numCallBacks}
+        else:
+            return {'cb': None, 'num_cb': None}
 
 
 class _Downloader(io.RawIOBase):
 
-    def __init__(self, key, progress=True):
+    def __init__(self, key, progress=None):
+        self.progress = progress
         self.key = key
-        if progress:
-            self.progress = (_DisplayProgress(), theProgressCount)
-        else:
-            self.progress = (None, None)
         self.mark = 0
 
     def __enter__(self):
+        if self.progress:
+            self.progress.__enter__()
         return self
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
-        (cb, num_cb) = self.progress
-        if cb:
-            cb.close()
+        if self.progress:
+            self.progress.__exit__(exceptionType, exceptionValue, traceback)
 
     def read(self, n=-1):
         if self.mark >= self.key.size or n == 0:
             return b''
-
-        (cb, num_cb) = self.progress
 
         if n < 0:
             headers = None
         else:
             headers = {"Range": "bytes=%s-%s" % (self.mark, self.mark + n - 1)}
 
-        data = self.key.get_contents_as_string(headers, cb=cb, num_cb=num_cb)
-        size = len(data)
-
-        if cb is not None:
-            cb.endChunk(size)
+        progress = _BotoProgress(None, "Range", self.progress, suppress=(self.progress is None))
+        with progress:
+            data = self.key.get_contents_as_string(
+                headers,
+                **_BotoProgress.botoArgs(progress)
+            )
+            size = len(data)
 
         assert n < 0 or size <= n, (size, data[:10])
 
@@ -367,41 +332,24 @@ class _Downloader(io.RawIOBase):
         return True
 
 
-class DefaultList(list):
-
-    """ list that automatically inserts None for missing items. """
-
-    def __setitem__(self, index, value):
-        """ Set item. """
-        if len(self) > index:
-            return list.__setitem__(self, index, value)
-        if len(self) < index:
-            self.extend([None] * (index - len(self)))
-        list.append(self, value)
-
-    def __getitem__(self, index):
-        """ Set item. """
-        if index >= len(self):
-            return None
-        return list.__getitem__(self, index)
-
-
 class _Uploader(io.RawIOBase):
 
-    def __init__(self, bucket, keyName, bufferSize=None):
+    def __init__(self, bucket, keyName, progress=None, bufferSize=None):
+        self.progress = progress
         self.bucket = bucket
         self.keyName = keyName.lstrip("/")
         self.uploader = None
-        self.parts = DefaultList()
+        self.parts = util.DefaultList()
         self.chunkCount = None
         self.metadata = {}
-        self.progress = True
         self.bufferedWriter = None
         self.bufferSize = bufferSize
         self.exception = None
 
     def __enter__(self):
         self.open()
+        if self.progress:
+            self.progress.__enter__()
         if self.bufferSize:
             self.bufferedWriter = io.BufferedWriter(self, buffer_size=self.bufferSize)
             return self.bufferedWriter
@@ -419,7 +367,7 @@ class _Uploader(io.RawIOBase):
         logger.debug("Opening")
 
         self.chunkCount = 0
-        self.parts = DefaultList()
+        self.parts = util.DefaultList()
 
         for upload in self.bucket.list_multipart_uploads():
             if upload.key_name != self.keyName:
@@ -453,7 +401,10 @@ class _Uploader(io.RawIOBase):
         else:
             self.close()
 
-        return False  # Don't supress exception
+        if self.progress:
+            self.progress.__exit__(exceptionType, exceptionValue, traceback)
+
+        return False  # Don't suppress exception
 
     def skipChunk(self, chunkSize, checkSum, data=None):
         part = self.parts[self.chunkCount]
@@ -523,23 +474,18 @@ class _Uploader(io.RawIOBase):
             raise Exception("Uploading before opening uploader.")
 
         self.chunkCount += 1
-        logger.info(
-            "Uploading %s chunk #%d for %s",
-            Store.humanize(len(bytes)), self.chunkCount, self.keyName
-        )
         fileObject = io.BytesIO(bytes)
 
-        if self.progress:
-            cb = _DisplayProgress()
-            num_cb = cb.numCallBacks
-        else:
-            (cb, num_cb) = (None, None)
-
-        self.uploader.upload_part_from_file(
-            fileObject, self.chunkCount, cb=cb, num_cb=num_cb
+        cb = _BotoProgress(
+            len(bytes),
+            "Chunk #%d" % (self.chunkCount),
+            self.progress,
+            suppress=(self.progress is None),
         )
 
-        if cb is not None:
-            cb.close()
+        with cb:
+            self.uploader.upload_part_from_file(
+                fileObject, self.chunkCount, **_BotoProgress.botoArgs(cb)
+            )
 
         return len(bytes)

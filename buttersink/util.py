@@ -2,8 +2,9 @@
 
 from __future__ import division
 
-import pprint
 import math
+import pprint
+import traceback
 
 
 def pretty(obj):
@@ -32,3 +33,28 @@ def humanize(number):
     pow = min(pow, len(units) - 1)
     mantissa = number / (base ** pow)
     return "%.4g %s" % (mantissa, units[pow])
+
+
+def displayTraceBack():
+    """ Display traceback useful for debugging. """
+    tb = traceback.format_stack()
+    return "\n" + "".join(tb[:-1])
+
+
+class DefaultList(list):
+
+    """ list that automatically inserts None for missing items. """
+
+    def __setitem__(self, index, value):
+        """ Set item. """
+        if len(self) > index:
+            return list.__setitem__(self, index, value)
+        if len(self) < index:
+            self.extend([None] * (index - len(self)))
+        list.append(self, value)
+
+    def __getitem__(self, index):
+        """ Set item. """
+        if index >= len(self):
+            return None
+        return list.__getitem__(self, index)
