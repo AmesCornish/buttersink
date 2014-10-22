@@ -506,7 +506,7 @@ class FileSystem(ioctl.Device):
     def _getDevices(self):
         self.devices = []
         fs = self.FS_INFO()
-        for i in xrange(1, fs.num_devices + 1):
+        for i in xrange(1, fs.max_id + 1):
             try:
                 dev = self.DEV_INFO(devid=i)
             except IOError as error:

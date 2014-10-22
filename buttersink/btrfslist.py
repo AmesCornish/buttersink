@@ -51,10 +51,12 @@ def main():
         fInfo = mount.FS_INFO()
         pprint.pprint(fInfo)
 
-        dInfo = mount.DEV_INFO(devid=1, uuid="")
-        pprint.pprint(dInfo)
+        vols = mount.subvolumes
 
-        for vol in mount.subvolumes:
+        # for dev in mount.devices:
+        #     pprint.pprint(dev)
+
+        for vol in vols:
             print vol
 
     return 0
