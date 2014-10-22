@@ -22,8 +22,6 @@ logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 theMinimumChangeRate = .00001
 
-theChunkSize = 100 << 20
-
 
 class ButterStore(Store.Store):
 
@@ -203,7 +201,7 @@ class ButterStore(Store.Store):
 
         return 2 * estimatedSize
 
-    def measureSize(self, diff):
+    def measureSize(self, diff, chunkSize):
         """ Spend some time to get an accurate size. """
         self._fileSystemSync()
 
@@ -238,7 +236,7 @@ class ButterStore(Store.Store):
         logger.info("Measuring %s", diff)
 
         measure = _Measure()
-        Store.transfer(sendContext, measure, theChunkSize)
+        Store.transfer(sendContext, measure, chunkSize)
 
         diff.setSize(measure.totalSize, False)
 

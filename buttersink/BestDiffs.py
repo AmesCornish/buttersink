@@ -102,7 +102,7 @@ class BestDiffs:
         self.dest = None
         self.delete = delete
 
-    def analyze(self, *sinks):
+    def analyze(self, chunkSize, *sinks):
         """  Figure out the best diffs to use to reach all our required volumes. """
         # Use destination (already uploaded) edges first
         sinks = list(sinks)
@@ -180,7 +180,7 @@ class BestDiffs:
                             continue
 
                         if sink != self.dest and edge.sizeIsEstimated:
-                            sink.measureSize(edge)
+                            sink.measureSize(edge, chunkSize)
                             newCost = self._cost(sink, edge.size, fromSize, height)
                             if oldCost is not None and oldCost <= newCost:
                                 continue

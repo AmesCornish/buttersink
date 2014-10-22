@@ -188,7 +188,7 @@ def main():
             return 0
 
         best = BestDiffs.BestDiffs(source.listVolumes(), args.delete)
-        best.analyze(source, dest)
+        best.analyze(args.part_size << 20, source, dest)
 
         summary = best.summary()
         logger.info("Optimal synchronization:")

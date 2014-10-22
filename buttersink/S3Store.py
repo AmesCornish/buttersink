@@ -168,7 +168,7 @@ class S3Store(Store.Store):
         """ Test whether edge is in this sink. """
         return diff.toVol in [d.toVol for d in self.diffs[diff.fromVol]]
 
-    def measureSize(self, diff):
+    def measureSize(self, diff, chunkSize):
         """ Spend some time to get an accurate size. """
         logger.warn("Don't need to measure S3 diffs")
 
@@ -272,14 +272,12 @@ class S3Store(Store.Store):
 class _BotoProgress(progress.DisplayProgress):
 
     def __init__(self, total=None, chunkName=None, parent=None, suppress=False):
-        super(_BotoProgress, self).__init__(total, chunkName, parent)
+        super(_BotoProgress, self).__init__(total, chunkName, parent, suppress)
         self.numCallBacks = theProgressCount
-        self.suppress = suppress
 
     def __call__(self, sent, total):
         self.total = total
-        if not self.suppress:
-            self.update(sent)
+        self.update(sent)
 
     @staticmethod
     def botoArgs(self):

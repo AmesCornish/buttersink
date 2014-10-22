@@ -24,7 +24,7 @@ class DisplayProgress(object):
     def __enter__(self):
         """ For with statement. """
         self.startTime = datetime.datetime.now()
-        self.offset = 0
+        self.update(0)
         return self
 
     def __exit__(self, exceptionType, exceptionValue, traceback):
@@ -38,8 +38,11 @@ class DisplayProgress(object):
 
         now = datetime.datetime.now()
 
-        elapsed = now - self.startTime
-        mbps = (sent * 8 / (10 ** 6) / elapsed.total_seconds())
+        elapsed = (now - self.startTime).total_seconds()
+        if elapsed > 0:
+            mbps = (sent * 8 / (10 ** 6) / elapsed)
+        else:
+            mbps = None
 
         self._display(sent, now, self.name, mbps)
 
@@ -61,13 +64,13 @@ class DisplayProgress(object):
             eta = None
 
         sys.stdout.write(
-            "\r %s: Sent %s of %s%s (%s %.3g Mbps) ETA: %s %20s\r" % (
+            "\r %s: Sent %s%s%s (%s%s) ETA: %s %20s\r" % (
                 elapsed,
                 util.humanize(sent),
-                util.humanize(self.total),
-                "--%" if self.total is None else " (%d%%)" % (int(100 * sent / self.total),),
-                chunk,
-                mbps,
+                "" if self.total is None else " of %s" % (util.humanize(self.total),),
+                "" if self.total is None else " (%d%%)" % (int(100 * sent / self.total),),
+                chunk or "",
+                "" if mbps is None else " %.3g Mbps" % (mbps,),
                 eta,
                 " ",
             )

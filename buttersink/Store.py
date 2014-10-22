@@ -148,7 +148,7 @@ class Store(object):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def measureSize(self, diff):
+    def measureSize(self, diff, chunkSize):
         """ Spend some time to get an accurate size. """
         raise NotImplementedError
 
