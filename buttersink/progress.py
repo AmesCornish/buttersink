@@ -57,7 +57,7 @@ class DisplayProgress(object):
 
         elapsed = now - self.startTime
 
-        if sent > 0 and self.total is not None:
+        if sent > 0 and self.total is not None and sent <= self.total:
             eta = (self.total - sent) * elapsed.total_seconds() / sent
             eta = datetime.timedelta(seconds=eta)
         else:

@@ -262,6 +262,13 @@ class S3Store(Store.Store):
             except boto.exception.S3ResponseError as error:
                 logger.error("%s: %s", error.code, error.message)
 
+            try:
+                keyName = keyName + Store.theInfoExtension
+                self.bucket.copy_key(theTrashPrefix + keyName, self.bucket.name, keyName)
+                self.bucket.delete_key(keyName)
+            except boto.exception.S3ResponseError as error:
+                logger.debug("%s: %s", error.code, error.message)
+
         logger.info("Trashed %d diffs (%s)", count, Store.humanize(size))
 
     def deletePartials(self):
