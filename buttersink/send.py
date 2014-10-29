@@ -236,7 +236,7 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
 
     def correct(attr, format, name, old, new, encode=None):
         if new is not None and new != old:
-            logger.warn("Correcting %s from %s to %s", name, str(old), str(new))
+            logger.info("Correcting %s from %s to %s", name, str(old), str(new))
             if encode is not None:
                 new = encode(new)
             TLV_PUT(attrs, attr, format, new)
@@ -244,7 +244,7 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
     def correctCRC():
         crc = calcCRC()
         if cmdHeader.crc != crc:
-            logger.warn("Correcting CRC from %d to %d", cmdHeader.crc, crc)
+            logger.info("Correcting CRC from %d to %d", cmdHeader.crc, crc)
             header = vars(cmdHeader)
             header['crc'] = crc
             cmdHeaderView[:] = btrfs_cmd_header.write(header).tostring()

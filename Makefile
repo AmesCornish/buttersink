@@ -20,7 +20,7 @@ makestamps :
 .PHONY : clean_setup
 clean_setup :
 	./setup.py clean
-	rm -r build dist buttersink.egg-info || true
+	sudo rm -r build dist buttersink.egg-info || true
 
 .PHONY : install
 install : version.txt
