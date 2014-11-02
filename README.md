@@ -30,14 +30,16 @@ transferring only needed differences
   * Intelligent selection of full and incremental transfers to minimize costs
 of transfer and storage, and to minimize risks from corruption of a difference.
 
-    * Smart heuristics based on S3 file sizes, btrfs quota information, and
-  btrfs-tools internal snapshot parent identification ("ruuid")
+    * Smart heuristics based on S3 file sizes, btrfs quota information, and btrfs-tools internal snapshot parent identification ("ruuid")
+    
     * Will measure actual size of candidate diff before uploading to S3.
 
   * Robust handling of btrfs send and receive errors
 
     * Detects and (optionally) deletes failed partial S3 transfers
+    
     * Resumable, checksummed multi-part uploads to S3 as a back-end
+    
     * Adjusts sent UUID so that restored snapshots can also be used for new diffs.
 
   * Conveniently lists snapshots and sizes in either btrfs or S3
@@ -132,6 +134,10 @@ Utilities
 Checksumdir is a utility to create checksum hashes of all the data and key
 metadata in a directory.  Useful for verifying the integrity of backups.
 
+    sudo btrfslist <dir>
+    
+Btrfslist will show snapshots, including their size and UUID.  Like `btrfs subvolume list`, but with more detail.
+    
 Contact
 =======
 
