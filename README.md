@@ -32,15 +32,12 @@ of transfer and storage, and to minimize risks from corruption of a difference.
 
     * Smart heuristics based on S3 file sizes, btrfs quota information, and
   btrfs-tools internal snapshot parent identification ("ruuid")
-
     * Will measure actual size of candidate diff before uploading to S3.
 
   * Robust handling of btrfs send and receive errors
 
     * Detects and (optionally) deletes failed partial S3 transfers
-
     * Resumable, checksummed multi-part uploads to S3 as a back-end
-    
     * Adjusts sent UUID so that restored snapshots can also be used for new diffs.
 
   * Conveniently lists snapshots and sizes in either btrfs or S3
