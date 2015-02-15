@@ -8,7 +8,7 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 """
 
-import Store
+from Store import humanize
 
 import collections
 import logging
@@ -82,7 +82,7 @@ class _Node:
 
         sinksSorted = collections.OrderedDict(
             {s: b for s, b in sinks.items() if s is not None}
-            )
+        )
         sinksSorted[None] = sinks[None]
         return sinksSorted
 
@@ -142,8 +142,8 @@ class BestDiffs:
 
             logger.info(
                 "measured size (%s), estimated size (%s)",
-                Store.humanize(actualSize), Store.humanize(estimatedSize),
-                )
+                humanize(actualSize), humanize(estimatedSize),
+            )
 
             if actualSize < 1.2 * estimatedSize:
                 return
@@ -173,22 +173,22 @@ class BestDiffs:
                 fromSize = self._totalSize(fromNode)
                 fromVol = fromNode.volume if fromNode else None
 
-                logger.debug(
-                    "Following edges from %s (total %s)",
-                    fromNode.display(sinks[-1]) if fromNode is not None else None,
-                    Store.humanize(fromSize),
-                )
+                # logger.debug(
+                #     "Following edges from %s (total %s)",
+                #     fromNode.display(sinks[-1]) if fromNode is not None else None,
+                #     humanize(fromSize),
+                # )
 
                 for sink in sinks:
-                    logger.debug(
-                        "Listing edges in %s",
-                        sink
-                    )
+                    # logger.debug(
+                    #     "Listing edges in %s",
+                    #     sink
+                    # )
 
                     for edge in sink.getEdges(fromVol):
                         toVol = edge.toVol
 
-                        logger.debug("Edge: %s", edge)
+                        # logger.debug("Edge: %s", edge)
 
                         # Skip any edges already in the destination
                         if sink != self.dest and self.dest.hasEdge(edge):
@@ -196,6 +196,9 @@ class BestDiffs:
 
                         if toVol in self.nodes:
                             toNode = self.nodes[toVol]
+                        # Don't transfer any edges we won't need in the destination
+                        elif sink != self.dest:
+                            continue
                         else:
                             toNode = _Node(toVol, True)
                             self.nodes[toVol] = toNode
@@ -226,7 +229,7 @@ class BestDiffs:
 
                         # Don't create circular paths
                         if self._wouldLoop(fromVol, toVol):
-                            logger.debug("Ignoring looping edge: %s", toVol.display(sink))
+                            # logger.debug("Ignoring looping edge: %s", toVol.display(sink))
                             continue
 
                         # if measureSize and sink != self.dest and edge.sizeIsEstimated:
@@ -236,11 +239,17 @@ class BestDiffs:
                         #         continue
 
                         logger.debug(
-                            "Replacing edge (%s -> %s cost) %s",
-                            Store.humanize(oldCost),
-                            Store.humanize(newCost),
+                            "Replacing edge (%s -> %s cost)\n%s",
+                            humanize(oldCost),
+                            humanize(newCost),
                             toNode.display(sink)
                         )
+                        logger.debug("Cost elements: %s", dict(
+                            sink=str(sink),
+                            edgeSize=humanize(edgeSize),
+                            fromSize=humanize(fromSize),
+                            height=height,
+                        ))
 
                         toNode.diff = edge
 
@@ -323,6 +332,6 @@ class BestDiffs:
         # Corruption risk
         cost += (prevSize + size) * (2 ** (height - 8))
 
-        logger.debug("_cost=%d (%s %d %d %d)", cost, sink, size, prevSize, height)
+        # logger.debug("_cost=%d (%s %d %d %d)", humanize(cost), sink, humanize(size), humanize(prevSize), height)
 
         return cost

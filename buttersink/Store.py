@@ -528,5 +528,5 @@ def skipDryRun(logger, dryRun, level=logging.DEBUG):
 
 
 def _skipRun(logger, level, format, *args):
-    logger.log(level, "WOULD: " + format % args)
+    logger.log(logging.DEBUG, "WOULD: " + format % args)
     return True

@@ -340,16 +340,14 @@ BTRFS_FS_TREE_OBJECTID = 5
 BTRFS_QUOTA_TREE_OBJECTID = 8
 
 
-class Volume(object):
+class _Volume(object):
 
     """ Represents a subvolume. """
 
-    volumes = {}
-    mounts = {}
-
-    def __init__(self, rootid, generation, info):
+    def __init__(self, fileSystem, rootid, generation, info):
         """ Initialize. """
         logger.debug("Volume %d/%d: %s", rootid, generation, pretty(info))
+        self.fileSystem = fileSystem
         self.id = rootid  # id in BTRFS_ROOT_TREE_OBJECTID, also FS treeid for this volume
         self.original_gen = info.otransid
         self.current_gen = info.ctransid
@@ -368,8 +366,8 @@ class Volume(object):
 
         self.links = {}
 
-        assert rootid not in Volume.volumes, rootid
-        Volume.volumes[rootid] = self
+        assert rootid not in self.fileSystem.volumes, rootid
+        self.fileSystem.volumes[rootid] = self
 
         logger.debug("%s", self)
 
@@ -386,7 +384,7 @@ class Volume(object):
     def fullPath(self):
         """ Return full butter path from butter root. """
         for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
-            path = Volume.volumes[dirTree].fullPath
+            path = self.fileSystem.volumes[dirTree].fullPath
             if path is not None:
                 return path + ("/" if path[-1] != "/" else "") + dirPath + name
 
@@ -403,10 +401,10 @@ class Volume(object):
         (Usually the root).
         """
         for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
-            for path in Volume.volumes[dirTree].linuxPaths:
+            for path in self.fileSystem.volumes[dirTree].linuxPaths:
                 yield path + "/" + dirPath + name
-        if self.fullPath in Volume.mounts:
-            yield Volume.mounts[self.fullPath]
+        if self.fullPath in self.fileSystem.mounts:
+            yield self.fileSystem.mounts[self.fullPath]
 
     def __str__(self):
         """ String representation. """
@@ -468,13 +466,14 @@ class FileSystem(ioctl.Device):
 
     """ Mounted file system descriptor for ioctl actions. """
 
+
     def __init__(self, path):
         """ Initialize. """
         super(FileSystem, self).__init__(path)
 
-        self.volumes = None
-        self.mounts = None
-        self.devices = None
+        self.devices = []
+        self.mounts = {}
+        self.volumes = {}
 
     @property
     def subvolumes(self):
@@ -485,7 +484,7 @@ class FileSystem(ioctl.Device):
         self._getRoots()
         self._getUsage()
 
-        volumes = Volume.volumes.values()
+        volumes = self.volumes.values()
         volumes.sort(key=(lambda v: v.fullPath))
         return volumes
 
@@ -504,7 +503,9 @@ class FileSystem(ioctl.Device):
         self.QUOTA_RESCAN_WAIT()
 
     def _getDevices(self):
-        self.devices = []
+        if self.devices:
+            return
+
         fs = self.FS_INFO()
         for i in xrange(1, fs.max_id + 1):
             try:
@@ -522,13 +523,14 @@ class FileSystem(ioctl.Device):
         # myDevice = os.stat(self.path).st_dev
         # myDevice = (os.major(myDevice), os.minor(myDevice))
 
-        Volume.mounts = {}
+        if self.mounts:
+            return
 
         defaultSubvol = self.DEFAULT_SUBVOL().id
         if defaultSubvol == 0:
             defaultSubvol = ""
         else:
-            defaultSubvol = Volume.volumes[defaultSubvol].fullPath.rstrip("/")
+            defaultSubvol = self.volumes[defaultSubvol].fullPath.rstrip("/")
 
         with open("/etc/mtab") as mtab:
             for line in mtab:
@@ -548,7 +550,7 @@ class FileSystem(ioctl.Device):
                     [o.partition("=") for o in opts.split(",")]
                 }
                 subvol = "/" + opts.get('subvol', defaultSubvol)
-                Volume.mounts[subvol] = path
+                self.mounts[subvol] = path
                 logger.debug("%s: %s", subvol, path)
 
     Key = collections.namedtuple('Key', ('objectid', 'type', 'offset'))
@@ -622,7 +624,7 @@ class FileSystem(ioctl.Device):
 
                 logger.debug("%s: %s %s", name, pretty(info), pretty(directory))
 
-                Volume.volumes[header.objectid]._addLink(
+                self.volumes[header.objectid]._addLink(
                     header.offset,
                     info.dirid,
                     info.sequence,
@@ -637,11 +639,14 @@ class FileSystem(ioctl.Device):
                 else:
                     assert False, header.len
 
-                if ((header.objectid >= BTRFS_FIRST_FREE_OBJECTID and
-                        header.objectid <= BTRFS_LAST_FREE_OBJECTID
-                     ) or
-                        header.objectid == BTRFS_FS_TREE_OBJECTID):
-                    Volume(
+                if (
+                    (header.objectid >= BTRFS_FIRST_FREE_OBJECTID
+                     and header.objectid <= BTRFS_LAST_FREE_OBJECTID)
+                        or header.objectid == BTRFS_FS_TREE_OBJECTID
+                ):
+                    assert header.objectid not in self.volumes, header.objectid
+                    self.volumes[header.objectid] = _Volume(
+                        self,
                         header.objectid,
                         header.offset,
                         info,
@@ -662,7 +667,7 @@ class FileSystem(ioctl.Device):
             if header.type == objectTypeKeys['BTRFS_QGROUP_INFO_KEY']:
                 data = btrfs_qgroup_info_item.read(buf)
                 try:
-                    vol = Volume.volumes[header.offset]
+                    vol = self.volumes[header.offset]
                     vol.totalSize = data.referenced
                     vol.exclusiveSize = data.exclusive
 
