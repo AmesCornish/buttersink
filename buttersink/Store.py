@@ -31,21 +31,19 @@ class Store(object):
 
     __metaclass__ = abc.ABCMeta
 
-    ignoreExtraVolumes = False
+    # Public methods
 
-    def __init__(self, userPath, isDest, dryrun):
+    def __init__(self, host, userPath, mode, dryrun):
         """ Initialize. """
+        self.host = host
+
         # { vol: [path] }
         # The order of the paths is important to work around btrfs bugs.
         # The first path is usually the root-volume mounted path,
         # which is required by btrfs 3.14.2.
         self.paths = collections.defaultdict((lambda: []))
 
-        # Paths specify a directory containing subvolumes,
-        # unless it's a source path not ending in "/",
-        # then it's a single source subvolume.
-
-        if not (userPath.endswith("/") or isDest):
+        if not userPath.endswith("/"):
             self.userVolume = os.path.basename(userPath)
             userPath = os.path.dirname(userPath)
         else:
@@ -59,7 +57,23 @@ class Store(object):
 
         logger.debug("%s('%s')", self.__class__.__name__, userPath)
 
+        self.mode = mode
         self.dryrun = dryrun
+
+        self.ignoreExtraVolumes = False
+        self.isRemote = False
+
+    def __enter__(self):
+        """ So we can use a 'with' statement. """
+        self._open()
+        self._fillVolumesAndPaths(self.paths)
+        return self
+
+    def __exit__(self, exceptionType, exceptionValue, traceback):
+        """ Clean up after 'with' statement. """
+        self._close()
+        self.paths = None
+        return False  # Don't supress exception
 
     def listContents(self):
         """ Return list of volumes or diffs in this Store's selected directory. """
@@ -110,6 +124,8 @@ class Store(object):
 
         return self._fullPath(path)
 
+    # Private and subclass methods
+
     def _fullPath(self, path):
         if path.startswith("/"):
             return path
@@ -135,12 +151,34 @@ class Store(object):
     def _skipDryRun(self, logger, level='DEBUG', dryrun=None):
         return skipDryRun(logger, dryrun or self.dryrun, level)
 
+    def __str__(self):
+        """ English description of self.
+
+        Subclasses should just define __unicode__.
+        """
+        return unicode(self).encode('utf-8')
+
+    # Overridables
+
+    def _open(self):
+        """ Open. """
+        pass
+
+    def _close(self):
+        """ Clean up. """
+        pass
+
     # Abstract methods
 
     @abc.abstractmethod
-    def _fillVolumesAndPaths(self):
-        """ Fill in self.paths. """
+    def _fillVolumesAndPaths(self, paths):
+        """ Fill in self.paths.
+
+        :arg paths: = { Store.Volume: ["linux path",]}
+        """
         raise NotImplementedError
+
+    # Abstract methods
 
     @abc.abstractmethod
     def getEdges(self, fromVol):
@@ -229,7 +267,7 @@ class Diff:
 
     """ Represents a btrfs send diff that creates toVol from fromVol. """
 
-    def __init__(self, sink, toVol, fromVol, size, sizeIsEstimated=False):
+    def __init__(self, sink, toVol, fromVol, size=None, sizeIsEstimated=False):
         """ Initialize. """
         self.sink = sink
         self.toVol = Volume.make(toVol)
@@ -388,15 +426,18 @@ class Volume:
     @staticmethod
     def readInfo(stream):
         """ Read previously-written information about diffs. """
-        for line in stream:
-            (toUUID, fromUUID, size) = line.split()
-            try:
-                size = int(size)
-            except:
-                logger.warning("Bad size: %s", size)
-                continue
-            logger.debug("diff info: %s %s %d", toUUID, fromUUID, size)
-            Diff.theKnownSizes[toUUID][fromUUID] = size
+        try:
+            for line in stream:
+                (toUUID, fromUUID, size) = line.split()
+                try:
+                    size = int(size)
+                except:
+                    logger.warning("Bad size: %s", size)
+                    continue
+                logger.debug("diff info: %s %s %d", toUUID, fromUUID, size)
+                Diff.theKnownSizes[toUUID][fromUUID] = size
+        except Exception as error:
+            logger.warn("Can't read .bs info file (%s)", error)
 
     def __unicode__(self):
         """ Friendly string for volume. """
@@ -481,11 +522,11 @@ def skipDryRun(logger, dryRun, level=logging.DEBUG):
     if not isinstance(level, int):
         level = logging.getLevelName(level)
     return (
-        functools.partial(_skipRun, logger) if dryRun
+        functools.partial(_skipRun, logger, level) if dryRun
         else functools.partial(logger.log, level)
-        )
+    )
 
 
-def _skipRun(logger, format, *args):
-    logger.debug("WOULD: " + format % args)
+def _skipRun(logger, level, format, *args):
+    logger.log(level, "WOULD: " + format % args)
     return True

@@ -168,6 +168,10 @@ def TLV_GET_U64(attrs, attrNum):
 
 def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
     """ Parse and replace UUID and transid info in data stream. """
+    if len(data) < 20:
+        return data
+
+    logger.debug("Setting received %s/%d and parent %s/%d", receivedUUID, receivedGen or 0, parentUUID, parentGen or 0)
     data = bytearray(data)  # Make data writable
 
     buf = ioctl.Buffer(data)

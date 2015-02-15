@@ -44,16 +44,14 @@ class S3Store(Store.Store):
 
     """ An S3 bucket synchronization source or sink. """
 
-    def __init__(self, host, path, isDest, dryrun):
+    def __init__(self, host, path, mode, dryrun):
         """ Initialize.
 
         host is the bucket name.
         path is an object key prefix to use.
 
         """
-        super(S3Store, self).__init__("/" + path, isDest, dryrun)
-
-        self.isDest = isDest
+        super(S3Store, self).__init__(host, "/" + path, mode, dryrun)
 
         self.bucketName = host
 
@@ -72,8 +70,7 @@ class S3Store(Store.Store):
             raise
 
         self.bucket = s3.get_bucket(self.bucketName)
-        # self._flushPartialUploads(True)
-        self._fillVolumesAndPaths()
+        self.isRemote = True
 
     def __unicode__(self):
         """ Return text description. """
@@ -101,7 +98,7 @@ class S3Store(Store.Store):
 
             upload.cancel_upload()
 
-    def _fillVolumesAndPaths(self):
+    def _fillVolumesAndPaths(self, paths):
         """ Fill in self.paths. """
         self.diffs = collections.defaultdict((lambda: []))
         self.extraKeys = {}
@@ -136,7 +133,7 @@ class S3Store(Store.Store):
             logger.debug("Adding %s in %s", diff, path)
 
             self.diffs[diff.fromVol].append(diff)
-            self.paths[diff.toVol].append(path)
+            paths[diff.toVol].append(path)
 
             self.extraKeys[diff] = path
 

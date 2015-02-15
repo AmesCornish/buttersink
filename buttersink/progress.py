@@ -12,14 +12,17 @@ class DisplayProgress(object):
 
     """ Class to display Mbs progress on tty. """
 
-    def __init__(self, total=None, chunkName=None, parent=None, suppress=False):
+    def __init__(self, total=None, chunkName=None, parent=None, suppress=None):
         """ Initialize. """
         self.startTime = None
         self.offset = None
         self.total = total
         self.name = chunkName
         self.parent = parent
-        self.suppress = suppress or not sys.stdout.isatty()
+        self.output = sys.stderr
+        self.suppress = suppress
+        if self.suppress is None:
+            self.suppress = not self.output.isatty()
 
     def __enter__(self):
         """ For with statement. """
@@ -63,7 +66,7 @@ class DisplayProgress(object):
         else:
             eta = None
 
-        sys.stdout.write(
+        self.output.write(
             "\r %s: Sent %s%s%s (%s%s) ETA: %s %20s\r" % (
                 elapsed,
                 util.humanize(sent),
@@ -76,7 +79,7 @@ class DisplayProgress(object):
             )
         )
 
-        sys.stdout.flush()
+        self.output.flush()
 
     def close(self):
         """ Stop overwriting display, or update parent. """
@@ -85,4 +88,4 @@ class DisplayProgress(object):
             return
         if self.suppress:
             return
-        sys.stdout.write("\n")
+        self.output.write("\n")

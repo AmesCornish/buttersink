@@ -27,7 +27,7 @@ class ButterStore(Store.Store):
 
     """ A local btrfs synchronization source or sink. """
 
-    def __init__(self, host, path, isDest, dryrun):
+    def __init__(self, host, path, mode, dryrun):
         """ Initialize.
 
         host is ignored.
@@ -37,20 +37,16 @@ class ButterStore(Store.Store):
         # Don't lose a trailing slash -- it's significant
         path = os.path.abspath(path) + ("/" if path.endswith("/") else "")
 
-        super(ButterStore, self).__init__(path, isDest, dryrun)
+        super(ButterStore, self).__init__(host, path, mode, dryrun)
 
         if not os.path.isdir(self.userPath):
             raise Exception("'%s' is not an existing directory" % (self.userPath))
-
-        self.isDest = isDest
 
         self.butter = Butter.Butter(dryrun)  # subprocess command-line interface
         self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
         self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
         self.extraVolumes = {}
-
-        self._fillVolumesAndPaths()
 
     def _btrfsVol2StoreVol(self, bvol):
         if bvol.received_uuid is not None:
@@ -65,8 +61,8 @@ class ButterStore(Store.Store):
 
         return Store.Volume(uuid, gen, bvol.totalSize, bvol.exclusiveSize)
 
-    def _fillVolumesAndPaths(self):
-        """ Fill in self.paths. """
+    def _fillVolumesAndPaths(self, paths):
+        """ Return [{vol: [path,]},] for self.paths. """
         with self.btrfs as mount:
             for bv in mount.subvolumes:
                 if not bv.readOnly:
@@ -90,7 +86,7 @@ class ButterStore(Store.Store):
                     if path is None:
                         continue
 
-                    self.paths[vol].append(path)
+                    paths[vol].append(path)
 
                     infoPath = self._fullPath(path + Store.theInfoExtension)
                     if os.path.exists(infoPath):
@@ -101,7 +97,7 @@ class ButterStore(Store.Store):
                     if not path.startswith("/"):
                         relPath = path
 
-                if vol not in self.paths:
+                if vol not in paths:
                     continue
 
                 logger.debug("%s", vol.display(sink=self, detail='phrase'))
@@ -177,7 +173,7 @@ class ButterStore(Store.Store):
         if os.path.exists(path):
             raise Exception(
                 "Path %s exists, can't receive %s" % (path, diff.toUUID)
-                )
+            )
 
         return self.butter.receive(path, diff)
 
@@ -186,7 +182,7 @@ class ButterStore(Store.Store):
         path = self.selectReceivePath(paths)
         path = path + Store.theInfoExtension
 
-        if Store.skipDryRun(logger, self.dryrun)("receive to %s", path):
+        if Store.skipDryRun(logger, self.dryrun)("receive info to %s", path):
             return None
 
         return open(path, "w")
@@ -199,9 +195,9 @@ class ButterStore(Store.Store):
         estimatedSize += toBVol.totalSize * (1 - math.exp(-changeRate * genDiff))
         estimatedSize = max(toBVol.exclusiveSize, estimatedSize)
 
-        return 2 * estimatedSize
+        return estimatedSize
 
-    def measureSize(self, diff, chunkSize):
+    def measureSize(self, diff, chunkSize, isInteractive=False):
         """ Spend some time to get an accurate size. """
         self._fileSystemSync()
 
@@ -213,9 +209,11 @@ class ButterStore(Store.Store):
         )
 
         class _Measure(io.RawIOBase):
+
             def __init__(self, estimatedSize):
                 self.totalSize = None
-                self.progress = progress.DisplayProgress(estimatedSize)
+                suppress = False if isInteractive else None
+                self.progress = progress.DisplayProgress(estimatedSize, suppress=suppress)
 
             def __enter__(self):
                 self.totalSize = 0
@@ -301,25 +299,31 @@ class ButterStore(Store.Store):
             del self.extraVolumes[vol]
             return
 
-        newPath = self.selectReceivePath(self.paths[vol])
+        if vol not in self.paths:
+            raise Exception("%s not in %s" % (vol, self))
+
+        paths = self.paths[vol]
+        newPath = self.selectReceivePath(paths)
+        if self._relativePath(newPath) in paths:
+            return
 
         if self._skipDryRun(logger, 'INFO')("Copy %s to %s", vol, newPath):
             return
 
         self.butterVolumes[vol.uuid].copy(newPath)
 
-    def deleteUnused(self):
+    def deleteUnused(self, dryrun=False):
         """ Delete any old snapshots in path, if not kept. """
         for (vol, path) in self.extraVolumes.items():
-            if self._skipDryRun(logger)("Delete subvolume %s", path):
+            if self._skipDryRun(logger, 'INFO', dryrun=dryrun)("Delete subvolume %s", path):
                 continue
             self.butterVolumes[vol.uuid].destroy()
 
-    def deletePartials(self):
+    def deletePartials(self, dryrun=False):
         """ Delete any old partial uploads/downloads in path. """
         for (vol, path) in self.extraVolumes.items():
             if not path.endswith(".part"):
                 continue
-            if self._skipDryRun(logger)("Delete subvolume %s", path):
+            if self._skipDryRun(logger, 'INFO', dryrun=dryrun)("Delete subvolume %s", path):
                 continue
             self.butterVolumes[vol.uuid].destroy()

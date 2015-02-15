@@ -291,16 +291,20 @@ class Control:
         if device.fd is None:
             raise Exception("Device hasn't been successfully opened.  Use 'with' statement.")
 
-        if self.structure is not None:
-            args = self.structure.write(args)
-            # log.write(args)
-            ret = fcntl.ioctl(device.fd, self.ioc, args, True)
-            # log.write(args)
-            assert ret == 0, ret
-            return self.structure.read(args)
-        else:
-            ret = fcntl.ioctl(device.fd, self.ioc)
-            assert ret == 0, ret
+        try:
+            if self.structure is not None:
+                args = self.structure.write(args)
+                # log.write(args)
+                ret = fcntl.ioctl(device.fd, self.ioc, args, True)
+                # log.write(args)
+                assert ret == 0, ret
+                return self.structure.read(args)
+            else:
+                ret = fcntl.ioctl(device.fd, self.ioc)
+                assert ret == 0, ret
+        except IOError as error:
+            error.filename = device.path
+            raise
 
     @staticmethod
     def _iocNumber(dir, type, nr, size):

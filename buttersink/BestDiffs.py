@@ -80,7 +80,11 @@ class _Node:
             sink.count += 1
             sink.size += n.diff.size
 
-        return sinks
+        sinksSorted = collections.OrderedDict(
+            {s: b for s, b in sinks.items() if s is not None}
+            )
+        sinksSorted[None] = sinks[None]
+        return sinksSorted
 
 
 class BestDiffs:
@@ -92,7 +96,7 @@ class BestDiffs:
 
     """
 
-    def __init__(self, volumes, delete=False):
+    def __init__(self, volumes, delete=False, measureSize=True):
         """ Initialize.
 
         volumes are the required snapshots.
@@ -101,14 +105,51 @@ class BestDiffs:
         self.nodes = {volume: _Node(volume, False) for volume in volumes}
         self.dest = None
         self.delete = delete
+        self.measureSize = measureSize
 
     def analyze(self, chunkSize, *sinks):
         """  Figure out the best diffs to use to reach all our required volumes. """
+        measureSize = False
+        if self.measureSize:
+            for sink in sinks:
+                if sink.isRemote:
+                    measureSize = True
+
         # Use destination (already uploaded) edges first
         sinks = list(sinks)
         sinks.reverse()
         self.dest = sinks[0]
 
+        def currentSize():
+            return sum([n.diffSize for n in self.nodes.values() if n.diff.sink != self.dest])
+
+        while True:
+            self._analyzeDontMeasure(chunkSize, measureSize, *sinks)
+
+            if not measureSize:
+                return
+
+            estimatedSize = currentSize()
+
+            # logger.info("Measuring any estimated diffs")
+
+            for node in self.nodes.values():
+                edge = node.diff
+                if measureSize and edge.sink != self.dest and edge.sizeIsEstimated:
+                    edge.sink.measureSize(edge, chunkSize)
+
+            actualSize = currentSize()
+
+            logger.info(
+                "measured size (%s), estimated size (%s)",
+                Store.humanize(actualSize), Store.humanize(estimatedSize),
+                )
+
+            if actualSize < 1.2 * estimatedSize:
+                return
+
+    def _analyzeDontMeasure(self, chunkSize, willMeasureLater, *sinks):
+        """  Figure out the best diffs to use to reach all our required volumes. """
         nodes = [None]
         height = 1
 
@@ -159,7 +200,16 @@ class BestDiffs:
                             toNode = _Node(toVol, True)
                             self.nodes[toVol] = toNode
 
-                        newCost = self._cost(sink, edge.size, fromSize, height)
+                        edgeSize = edge.size
+                        if edge.sizeIsEstimated:
+                            if willMeasureLater:
+                                # Slight preference for accurate sizes
+                                edgeSize *= 1.2
+                            else:
+                                # Large preference for accurate sizes
+                                edgeSize *= 2
+
+                        newCost = self._cost(sink, edgeSize, fromSize, height)
                         if toNode.diff is None:
                             oldCost = None
                         else:
@@ -179,11 +229,11 @@ class BestDiffs:
                             logger.debug("Ignoring looping edge: %s", toVol.display(sink))
                             continue
 
-                        if sink != self.dest and edge.sizeIsEstimated:
-                            sink.measureSize(edge, chunkSize)
-                            newCost = self._cost(sink, edge.size, fromSize, height)
-                            if oldCost is not None and oldCost <= newCost:
-                                continue
+                        # if measureSize and sink != self.dest and edge.sizeIsEstimated:
+                        #     sink.measureSize(edge, chunkSize)
+                        #     newCost = self._cost(sink, edge.size, fromSize, height)
+                        #     if oldCost is not None and oldCost <= newCost:
+                        #         continue
 
                         logger.debug(
                             "Replacing edge (%s -> %s cost) %s",

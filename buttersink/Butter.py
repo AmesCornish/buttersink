@@ -29,7 +29,7 @@ if True:  # Headers
 # logger.setLevel('DEBUG')
 
 # Btrfs should copy the sending received UUID to the receving UUID,
-# but instead it copies the seding current UUID to the receving UUID.
+# but instead it copies the sending current UUID to the receving UUID.
 # This prevents diff parents from being properly identified.
 # This can be fixed by changing the UUID and transid's duing send/receive.
 FIXUP_AFTER_RECEIVE = False
@@ -73,16 +73,16 @@ class Butter:
         """ Return a context manager for stream that will store a diff. """
         directory = os.path.dirname(path)
 
-        cmd = ["btrfs", "receive", directory]
+        cmd = ["btrfs", "receive", "-e", directory]
 
         if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
             return None
 
-        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=sys.stderr, stdout=DEVNULL)
+        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=DEVNULL)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return _Writer(process, path, diff)
+        return Writer(process, process.stdin, path, diff)
 
     def send(self, targetPath, parent, diff, allowDryRun=True):
         """ Return context manager for stream to send a (incremental) snapshot. """
@@ -94,20 +94,20 @@ class Butter:
         if Store.skipDryRun(logger, self.dryrun and allowDryRun)("Command: %s", cmd):
             return None
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=DEVNULL)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=DEVNULL)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return _Reader(process, targetPath, diff)
+        return Reader(process, process.stdout, targetPath, diff)
 
 
-class _Writer(io.RawIOBase):
+class Writer(io.RawIOBase):
 
     """ Context Manager to write a snapshot. """
 
-    def __init__(self, process, path, diff):
+    def __init__(self, process, stream, path, diff):
         self.process = process
-        self.stream = process.stdin
+        self.stream = stream
         self.path = path
         self.diff = diff
         self.bytesWritten = None
@@ -119,6 +119,9 @@ class _Writer(io.RawIOBase):
     def __exit__(self, exceptionType, exception, trace):
         self.stream.close()
 
+        if self.process is None:
+            return
+
         logger.debug("Waiting for receive process to finish...")
         self.process.wait()
 
@@ -129,8 +132,12 @@ class _Writer(io.RawIOBase):
                 received.SET_RECEIVED_SUBVOL(
                     uuid=self.diff.toUUID,
                     stransid=self.diff.toGen,
-                    )
+                )
             return
+
+        if self.process.returncode != 0:
+            for line in self.process.stderr:
+                sys.stderr.write(line)
 
         if os.path.exists(self.path):
             # This tries to mark partial (failed) transfers.
@@ -144,9 +151,9 @@ class _Writer(io.RawIOBase):
 
         if exception is None:
             raise Exception(
-                "receive returned error %d. %s may be corrupt."
-                % (self.process.returncode, self.path)
-                )
+                "receive %s returned error %d."
+                % (self.path, self.process.returncode, )
+            )
 
     def write(self, data):
         # If it's the first big chunk (header)
@@ -158,18 +165,18 @@ class _Writer(io.RawIOBase):
                 self.diff.toGen,
                 self.diff.fromUUID,
                 self.diff.fromGen,
-                )
+            )
         self.stream.write(data)
         self.bytesWritten += len(data)
 
 
-class _Reader(io.RawIOBase):
+class Reader(io.RawIOBase):
 
     """ Context Manager to read a snapshot. """
 
-    def __init__(self, process, path, diff):
+    def __init__(self, process, stream, path, diff):
         self.process = process
-        self.stream = process.stdout
+        self.stream = stream
         self.path = path
         self.diff = diff
         self.bytesRead = None
@@ -181,17 +188,21 @@ class _Reader(io.RawIOBase):
     def __exit__(self, exceptionType, exception, trace):
         self.stream.close()
 
+        if self.process is None:
+            return
+
         logger.debug("Waiting for send process to finish...")
         self.process.wait()
 
-        if exception is None and self.process.returncode == 0:
-            return
+        if self.process.returncode != 0:
+            for line in self.process.stderr:
+                sys.stderr.write(line)
 
-        if exception is None:
+        if exception is None and self.process.returncode != 0:
             raise Exception(
                 "send returned error %d. %s may be corrupt."
                 % (self.process.returncode, self.path)
-                )
+            )
 
     def read(self, size):
         # If it's the first big chunk (header)
@@ -204,7 +215,7 @@ class _Reader(io.RawIOBase):
                 self.diff.toGen,
                 self.diff.fromUUID,
                 self.diff.fromGen,
-                )
+            )
         self.bytesRead += len(data)
         return data
 
