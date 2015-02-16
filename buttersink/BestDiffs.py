@@ -332,6 +332,9 @@ class BestDiffs:
         # Corruption risk
         cost += (prevSize + size) * (2 ** (height - 8))
 
-        # logger.debug("_cost=%d (%s %d %d %d)", humanize(cost), sink, humanize(size), humanize(prevSize), height)
+        # logger.debug(
+        #     "_cost=%d (%s %d %d %d)",
+        #     humanize(cost), sink, humanize(size), humanize(prevSize), height,
+        #     )
 
         return cost

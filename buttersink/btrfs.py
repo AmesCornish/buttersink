@@ -466,7 +466,6 @@ class FileSystem(ioctl.Device):
 
     """ Mounted file system descriptor for ioctl actions. """
 
-
     def __init__(self, path):
         """ Initialize. """
         super(FileSystem, self).__init__(path)

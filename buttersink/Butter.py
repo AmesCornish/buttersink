@@ -78,11 +78,16 @@ class Butter:
         if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
             return None
 
-        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=DEVNULL)
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdout=DEVNULL,
+        )
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return Writer(process, process.stdin, path, diff)
+        return _Writer(process, process.stdin, path, diff)
 
     def send(self, targetPath, parent, diff, allowDryRun=True):
         """ Return context manager for stream to send a (incremental) snapshot. """
@@ -94,14 +99,15 @@ class Butter:
         if Store.skipDryRun(logger, self.dryrun and allowDryRun)("Command: %s", cmd):
             return None
 
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=DEVNULL)
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=DEVNULL)
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return Reader(process, process.stdout, targetPath, diff)
+        return _Reader(process, process.stdout, targetPath, diff)
 
 
-class Writer(io.RawIOBase):
+class _Writer(io.RawIOBase):
 
     """ Context Manager to write a snapshot. """
 
@@ -170,7 +176,7 @@ class Writer(io.RawIOBase):
         self.bytesWritten += len(data)
 
 
-class Reader(io.RawIOBase):
+class _Reader(io.RawIOBase):
 
     """ Context Manager to read a snapshot. """
 

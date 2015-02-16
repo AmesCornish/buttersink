@@ -171,7 +171,10 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
     if len(data) < 20:
         return data
 
-    logger.debug("Setting received %s/%d and parent %s/%d", receivedUUID, receivedGen or 0, parentUUID, parentGen or 0)
+    logger.debug(
+        "Setting received %s/%d and parent %s/%d",
+        receivedUUID, receivedGen or 0, parentUUID, parentGen or 0.
+        )
     data = bytearray(data)  # Make data writable
 
     buf = ioctl.Buffer(data)

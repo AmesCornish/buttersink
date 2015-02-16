@@ -11,7 +11,7 @@ Sources and destinations can be local btrfs file systems, remote btrfs
 file systems over SSH, or S3 buckets.
 
 To use the ssh back-end, ButterSink must be installed on the remote
-system.  (Note: ssh back-end is not yet implemented.)
+system.
 
 ButterSink *only* handles read-only subvolumes. It ignores read-write
 subvolumes and any files not in a subvolume.
@@ -22,7 +22,7 @@ Features
 ButterSink is designed for efficient reliable transfers for backups.
 Currently implemented features include:
 
-  * Transfers between a local btrfs filesystem and an Amazon S3 bucket
+  * Transfers between a local btrfs filesystem, Amazon S3 bucket, other local btrfs filesystems, or remote btrfs filesystems over ssh
 
   * Automatically synchronizes a set of snapshots, or a single snapshot,
 transferring only needed differences
@@ -32,11 +32,11 @@ of transfer and storage, and to minimize risks from corruption of a difference.
 
     * Smart heuristics based on S3 file sizes, btrfs quota information, and btrfs-tools internal snapshot parent identification ("ruuid")
     
-    * Will measure actual size of candidate diff before uploading to S3.
+    * Will measure actual size of candidate diff before remote transfers.
 
   * Robust handling of btrfs send and receive errors
 
-    * Detects and (optionally) deletes failed partial S3 transfers
+    * Detects and (optionally) deletes failed partial transfers
     
     * Resumable, checksummed multi-part uploads to S3 as a back-end
     
@@ -48,7 +48,7 @@ Usage
 =====
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-usage: buttersink.py [-h] [-n] [-d] [-q] [-l LOGFILE] [-V]
+usage: buttersink.py [-h] [-n] [-d] [-e] [-q] [-l LOGFILE] [-V]
                      [--part-size PART_SIZE]
                      [<src>] <dst>
 
@@ -62,6 +62,8 @@ optional arguments:
   -h, --help            show this help message and exit
   -n, --dry-run         display what would be transferred, but don't do it
   -d, --delete          delete any snapshots in <dst> that are not in <src>
+  -e, --estimate        use estimated size instead of measuring diffs with a
+                        local test send
   -q, --quiet           once: don't display progress. twice: only display
                         error messages
   -l LOGFILE, --logfile LOGFILE
@@ -72,16 +74,14 @@ optional arguments:
 
 <src>, <dst>:   [btrfs://]/path/to/directory/[snapshot]
                 s3://bucket/prefix/[snapshot]
+                ssh://[user@]host/path/to/directory/[snapshot]
 
 If only <dst> is supplied, just list available snapshots.  NOTE: The trailing
 "/" *is* significant.
-
-Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
-See README.md and LICENSE.txt for more info.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Authentication
-==============
+S3 Authentication
+=================
 
 S3 interaction and S3 authentication are handled by Boto. Boto will read
 S3 credentials from `~/.boto`, which should look like this:
@@ -107,6 +107,25 @@ user access for ButterSink:
     }
 
 ButterSink needs root privileges to access btrfs file systems.
+
+SSH Authentication
+==================
+
+If the source or destination is an ssh://user@host/path url, then a connection is made to the remote host using a command line like:
+
+    ssh user@host sudo buttersink --server --mode w /mnt/butter/
+
+Modes are:
+
+    'r' -- just downloads
+    'a' -- uploads
+    'w' -- uploads with --delete
+
+Notice that sudo is used to ensure root privileges, which are required by btrfs.  The user should be root, or sudo should be configured to a allow the user to issue the buttersink command without a password.  Here's an example entry in /etc/sudoers for user fred, giving access to snapshots in /bak:
+
+    fred ALL = NOPASSWD: /usr/local/bin/buttersink --server --mode r /bak/*
+    fred ALL = NOPASSWD: /usr/local/bin/buttersink --server --mode a /bak/*
+    fred ALL = NOPASSWD: /usr/local/bin/buttersink --server --mode w /bak/*
 
 Installation
 ============

@@ -12,6 +12,7 @@ if True:  # Headers
         import argparse
         import errno
         import logging
+        import logging.handlers
         import os.path
         import re
         import sys
@@ -22,17 +23,16 @@ if True:  # Headers
         import SSHStore
         import Store
 
-theDebug = True
+theDebug = False
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
 
-theVersionFile = os.path.join(os.path.dirname(__file__), "version.txt")
 try:
-    with open(theVersionFile) as version:
-        theVersion = version.readline()
+    import version
+    theVersion = version.version
 except IOError:
-    print("Missing '%s'" % (theVersionFile))
+    print("Can't import version.py")
     theVersion = "<unknown>"
 
 theChunkSize = 100
@@ -42,7 +42,7 @@ command = argparse.ArgumentParser(
     epilog="""
 <src>, <dst>:   [btrfs://]/path/to/directory/[snapshot]
                 s3://bucket/prefix/[snapshot]
-                ssh://[user@]host/full/path/to/[snapshot]
+                ssh://[user@]host/path/to/directory/[snapshot]
 
 If only <dst> is supplied, just list available snapshots.  NOTE: The trailing
 "/" *is* significant.
@@ -105,6 +105,10 @@ def _setupLogging(quietLevel, logFile, isServer):
         '%(asctime)-15s: %(levelname)7s:'
         '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
     )
+    theProgram = "buttersink[%d]" % (os.getpid())
+    theSysLogFormat = (
+        theProgram + ': %(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+    )
 
     root = logging.getLogger()
     root.setLevel("INFO" if theDebug else "DEBUG")  # When debugging, this is handled per-logger
@@ -120,10 +124,15 @@ def _setupLogging(quietLevel, logFile, isServer):
     formatString = ("S" if isServer else " ") + formatString
 
     add(sys.stderr, level, formatString)
-    # add(sys.stdout, level, formatString)
 
     if logFile is not None:
         add(logFile, "DEBUG", theLogFormat)
+
+    if isServer:
+        handler = logging.handlers.SysLogHandler(address='/dev/log')
+        handler.setLevel(level)
+        handler.setFormatter(logging.Formatter(theSysLogFormat))
+        root.addHandler(handler)
 
     logging.getLogger('boto').setLevel("WARN")
 

@@ -4,7 +4,7 @@
 # Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 .PHONY : all
-all : makestamps/apt makestamps/pip version.txt
+all : makestamps/apt makestamps/pip buttersink/version.py
 
 makestamps/apt : apt.txt | makestamps
 	sudo apt-get install $$(cat $<)
@@ -23,7 +23,7 @@ clean_setup :
 	sudo rm -r build dist buttersink.egg-info || true
 
 .PHONY : install
-install : version.txt
+install : buttersink/version.py
 	./setup.py build
 	sudo ./setup.py install
 
@@ -32,17 +32,17 @@ clean : clean_setup
 	rm -r make || true
 
 .PHONY : pypi
-pypi : version.txt
+pypi : buttersink/version.py
 	./setup.py bdist sdist upload
 
 makestamps/source : $(shell git ls-files '*.py')
 	touch $@
 
-version.txt : .git/index .git/refs/tags makestamps/source
+buttersink/version.py : .git/index .git/refs/tags makestamps/source
 	if git describe --tags --dirty | grep -q dirty; then \
-		echo $$(git describe --tags --dirty)-$$(date +"%m%d") > $@; \
+		echo "version = \"$$(git describe --tags --dirty)-$$(date +%m%d)\"" > $@; \
 	else \
-		echo $$(git describe --tags) > $@; \
+		echo "version = \"$$(git describe --tags)\"" > $@; \
 	fi
 	cat $@
 
@@ -62,7 +62,7 @@ EXEC=sudo -E ./buttersink.py ${OPTS}
 
 TEST_DIR=/mnt/butter/bs-test
 
-TEST_REMOTE_SSH=ssh://root@proliant/mnt/butter/bak/test
+TEST_REMOTE_SSH=ssh://bak@proliant/mnt/butter/bak/test
 define CLEAN_REMOTE_SSH
 	ssh root@proliant btrfs sub del -c '/mnt/butter/bak/test/*' || true
 	ssh root@proliant rm '/mnt/butter/bak/test/*' || true
@@ -153,7 +153,7 @@ clean_test :
 	${CLEAN_REMOTE_SSH}
 	${CLEAN_REMOTE_S3}
 
-makestamps/test_restore_ssh makestamps/test_restore_s3 : makestamps/test_restore_% : makestamps/test_backup_% | ${TEST_DIR}/restore_%
+makestamps/test_restore_ssh makestamps/test_restore_s3 : makestamps/test_restore_% : makestamps/test_backup_% | ${TEST_DIR}/restore_% makestamps/test_backup_s3 makestamps/test_backup_ssh
 	$(CLEAN_TEST)
 	sudo sync
 	${EXEC} ${TEST_REMOTE}/${RESTORE_SNAP} ${TEST_RESTORE}/

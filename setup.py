@@ -4,8 +4,8 @@
 
 from setuptools import setup
 
-with open("version.txt", "r") as version:
-    theVersion = version.readline().strip()
+import buttersink.version
+theVersion = buttersink.version.version
 
 with open("README.md", "r") as readme:
     theReadMe = readme.read()
@@ -35,9 +35,9 @@ setup(
     install_requires=['boto', 'psutil'],
 
     # These will be in the package subdirectory, accessible by package code
-    package_data={
-        '': ['version.txt'],
-    },
+    # package_data={
+    #     '': ['version.txt'],
+    # },
 
     # Top-level files, for access by setup, must be listed in MANIFEST.in
 

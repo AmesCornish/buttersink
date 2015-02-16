@@ -3,10 +3,10 @@
 Copyright (c) 2014-2015 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 """
 
-from buttersink import theVersion
 from progress import DisplayProgress
 import ButterStore
 import Store
+import version
 
 import io
 import json
@@ -18,9 +18,11 @@ import sys
 import urllib
 
 logger = logging.getLogger(__name__)
-logger.setLevel('DEBUG')
+# logger.setLevel('DEBUG')
 
 DEVNULL = open(os.devnull, 'wb')
+
+theVersion = version.version
 
 
 class _Obj2Arg:
@@ -118,8 +120,8 @@ class _SSHStream(io.RawIOBase):
         except Exception as error:
             if exceptionType is None:
                 raise
-            # else:
-            #     logger.debug("Secondary error: %s", error)
+            else:
+                logger.debug("Secondary error: %s", error)
 
         if exceptionType is None and result and 'error' in result:
             raise Exception(result)
@@ -255,7 +257,7 @@ class SSHStore(Store.Store):
             return None
 
         (diffTo, diffFrom) = self.toArg.diff(diff)
-        result = self._client.send(diffTo, diffFrom)
+        self._client.send(diffTo, diffFrom)
 
         return _SSHStream(self._client, DisplayProgress(diff.size))
 
@@ -268,7 +270,7 @@ class SSHStore(Store.Store):
             return None
 
         (diffTo, diffFrom) = self.toArg.diff(diff)
-        result = self._client.receive(path, diffTo, diffFrom)
+        self._client.receive(path, diffTo, diffFrom)
 
         return _SSHStream(self._client, DisplayProgress(diff.size))
 
@@ -280,7 +282,7 @@ class SSHStore(Store.Store):
         if Store.skipDryRun(logger, self.dryrun)("receive info to %s", path):
             return None
 
-        result = self._client.receiveInfo(path)
+        self._client.receiveInfo(path)
 
         return _SSHStream(self._client)
 
@@ -319,8 +321,16 @@ class _Client(object):
         if self._process is not None:
             return
 
-        program = '/home/ames/Projects/buttersink/buttersink.py'
-        cmd = ['ssh', self._host, program, '--server', '--mode', self._mode, self._directory]
+        cmd = [
+            'ssh',
+            self._host,
+            'sudo',
+            'buttersink',
+            '--server',
+            '--mode',
+            self._mode,
+            self._directory
+        ]
         logger.debug("Connecting with: %s", cmd)
         self._process = subprocess.Popen(
             cmd,
@@ -402,33 +412,6 @@ class _Client(object):
 
         return result
 
-    def _testSend(self):
-        self._sendCommand('send', '/bak/dmz/2014-05-05')
-        cmd = ['btrfs', 'rec', '-ve', '/mnt/butter/bs-test/']
-        logger.debug("Executing '%s'", cmd)
-        receive = subprocess.Popen(
-            cmd,
-            # stdin=subprocess.PIPE,
-            stdin=self._process.stdout,
-            stderr=sys.stderr,
-            stdout=sys.stderr,
-        )
-        # (out, err) = receive.communicate(None)
-
-        # maxSize = 16
-        # while True:
-        #     data = self._process.stdout.read(maxSize)
-        #     if data == '':
-        #         break
-        #     logger.debug("%d bytes: %s", len(data), data)
-        # logger.debug("%d bytes: %s", len(data), data.encode('base64'))
-        #     receive.stdin.write(data)
-        #     time.sleep(1)
-
-        receive.wait()
-
-        logger.debug("Finished receive (%d)", receive.returncode)
-
     @classmethod
     def _addMethod(cls, method, name, mode):
         def fn(self, *args):
@@ -450,7 +433,10 @@ def command(name, mode):
 
 class StoreProxyServer(object):
 
-    """ Runs a ButterStore and responds to queries over ssh. """
+    """ Runs a ButterStore and responds to queries over ssh.
+
+    Use in a 'with' statement.
+    """
 
     def __init__(self, path, mode):
         """ Initialize. """
@@ -464,9 +450,11 @@ class StoreProxyServer(object):
         self.stream = None
 
     def __enter__(self):
+        """ Enter 'with' statement. """
         return self
 
     def __exit__(self, exceptionType, exception, trace):
+        """ Exit 'with' statement. """
         try:
             self._close()
         except Exception as error:
