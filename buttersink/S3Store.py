@@ -8,6 +8,7 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 if True:  # Imports and constants
     if True:  # Imports
+        from util import humanize
         import progress
         import Store
         import util
@@ -155,7 +156,7 @@ class S3Store(Store.Store):
             count += 1
             size += diff.size
 
-        yield "TOTAL: %d diffs %s" % (count, Store.humanize(size))
+        yield "TOTAL: %d diffs %s" % (count, humanize(size))
 
     def getEdges(self, fromVol):
         """ Return the edges available from fromVol. """
@@ -177,7 +178,8 @@ class S3Store(Store.Store):
         if self._skipDryRun(logger)("receive %s in %s", keyName, self):
             return None
 
-        return _Uploader(self.bucket, keyName, _BotoProgress(diff.size))
+        progress = _BotoProgress(diff.size) if self.showProgress is True else None
+        return _Uploader(self.bucket, keyName, progress)
 
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
@@ -208,7 +210,7 @@ class S3Store(Store.Store):
 
         return match
 
-    def send(self, diff, progress=True):
+    def send(self, diff):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         path = self._fullPath(self.extraKeys[diff])
         keyName = self._keyName(diff.toUUID, diff.fromUUID, path)
@@ -217,7 +219,8 @@ class S3Store(Store.Store):
         if self._skipDryRun(logger)("send %s in %s", keyName, self):
             return None
 
-        return _Downloader(key, _BotoProgress(diff.size, suppress=(not progress)))
+        progress = _BotoProgress(diff.size) if self.showProgress is True else None
+        return _Downloader(key, progress)
 
     def keep(self, diff):
         """ Mark this diff (or volume) to be kept in path. """
@@ -266,7 +269,7 @@ class S3Store(Store.Store):
             except boto.exception.S3ResponseError as error:
                 logger.debug("%s: %s", error.code, error.message)
 
-        logger.info("Trashed %d diffs (%s)", count, Store.humanize(size))
+        logger.info("Trashed %d diffs (%s)", count, humanize(size))
 
     def deletePartials(self):
         """ Delete any old partial uploads/downloads in path. """
@@ -275,17 +278,18 @@ class S3Store(Store.Store):
 
 class _BotoProgress(progress.DisplayProgress):
 
-    def __init__(self, total=None, chunkName=None, parent=None, suppress=False):
-        super(_BotoProgress, self).__init__(total, chunkName, parent, suppress)
+    def __init__(self, total=None, chunkName=None, parent=None):
+        super(_BotoProgress, self).__init__(total, chunkName, parent)
         self.numCallBacks = theProgressCount
 
     def __call__(self, sent, total):
+        logger.debug("BotoProgress: %d/%d", sent, total)
         self.total = total
         self.update(sent)
 
     @staticmethod
     def botoArgs(self):
-        if self is not None and not self.suppress:
+        if self is not None:
             return {'cb': self, 'num_cb': self.numCallBacks}
         else:
             return {'cb': None, 'num_cb': None}
@@ -316,13 +320,17 @@ class _Downloader(io.RawIOBase):
         else:
             headers = {"Range": "bytes=%s-%s" % (self.mark, self.mark + n - 1)}
 
-        progress = _BotoProgress(n, "Range", self.progress, suppress=(self.progress is None))
-        with progress:
+        if self.progress is None:
             data = self.key.get_contents_as_string(
                 headers,
-                **_BotoProgress.botoArgs(progress)
             )
-            size = len(data)
+        else:
+            progress = _BotoProgress(n, "Range", self.progress)
+            with progress:
+                data = self.key.get_contents_as_string(
+                    headers, **_BotoProgress.botoArgs(progress)
+                )
+        size = len(data)
 
         assert n < 0 or size <= n, (size, data[:10])
 
@@ -427,7 +435,7 @@ class _Uploader(io.RawIOBase):
 
         logger.info(
             "Skipping already uploaded %s chunk #%d",
-            Store.humanize(chunkSize),
+            humanize(chunkSize),
             self.chunkCount,
         )
 
@@ -476,18 +484,23 @@ class _Uploader(io.RawIOBase):
             raise Exception("Uploading before opening uploader.")
 
         self.chunkCount += 1
+        size = len(bytes)
         fileObject = io.BytesIO(bytes)
 
-        cb = _BotoProgress(
-            len(bytes),
-            "Chunk #%d" % (self.chunkCount),
-            self.progress,
-            suppress=(self.progress is None),
-        )
-
-        with cb:
+        if self.progress is None:
             self.uploader.upload_part_from_file(
-                fileObject, self.chunkCount, **_BotoProgress.botoArgs(cb)
+                fileObject, self.chunkCount,
+            )
+        else:
+            cb = _BotoProgress(
+                size,
+                "Chunk #%d" % (self.chunkCount),
+                self.progress,
             )
 
-        return len(bytes)
+            with cb:
+                self.uploader.upload_part_from_file(
+                    fileObject, self.chunkCount, **_BotoProgress.botoArgs(cb)
+                )
+
+        return size

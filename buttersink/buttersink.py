@@ -17,11 +17,11 @@ if True:  # Headers
         import re
         import sys
 
+        from util import humanize
         import BestDiffs
         import ButterStore
         import S3Store
         import SSHStore
-        import Store
 
 theDebug = False
 
@@ -35,7 +35,7 @@ except IOError:
     print("Can't import version.py")
     theVersion = "<unknown>"
 
-theChunkSize = 100
+theChunkSize = 20
 
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
@@ -68,10 +68,8 @@ command.add_argument('-e', '--estimate', action="store_true",
                      help='use estimated size instead of measuring diffs with a local test send',
                      )
 
-command.add_argument('-q', '--quiet', action="count", default=0,
-                     help="""
-                     once: don't display progress.
-                     twice: only display error messages""",
+command.add_argument('-q', '--quiet', action="store_true",
+                     help='only display error messages',
                      )
 command.add_argument('-l', '--logfile', type=argparse.FileType('a'),
                      help='log debugging information to file',
@@ -95,7 +93,7 @@ command.add_argument('--mode',
                      )
 
 
-def _setupLogging(quietLevel, logFile, isServer):
+def _setupLogging(quiet, logFile, isServer):
     theDisplayFormat = '%(message)s'
     theDebugDisplayFormat = (
         '%(levelname)7s:'
@@ -119,9 +117,9 @@ def _setupLogging(quietLevel, logFile, isServer):
         handler.setFormatter(logging.Formatter(format))
         root.addHandler(handler)
 
-    level = "DEBUG" if theDebug else "INFO" if quietLevel < 2 else "WARN"
+    level = "DEBUG" if theDebug else "INFO" if not quiet else "WARN"
     formatString = theDebugDisplayFormat if theDebug else theDisplayFormat
-    formatString = ("S" if isServer else " ") + formatString
+    formatString = ("S|" if isServer else "  ") + formatString
 
     add(sys.stderr, level, formatString)
 
@@ -194,8 +192,6 @@ def main():
 
         logger.debug("Arguments: %s", vars(args))
 
-        progress = args.quiet == 0
-
         if args.server:
             server = SSHStore.StoreProxyServer(args.dest, args.mode)
             return(server.run())
@@ -208,15 +204,22 @@ def main():
             source = dest
             dest = None
 
+        if not sys.stderr.isatty():
+            source.showProgress = dest.showProgress = False
+        elif dest is None or (source.isRemote and not dest.isRemote):
+            source.showProgress = True
+        else:
+            dest.showProgress = True
+
         with source:
             try:
                 next(source.listVolumes())
             except StopIteration:
-                logger.error("No snapshots in source.")
+                logger.warn("No snapshots in source.")
                 path = args.source or args.dest
                 if not path.endswith("/"):
                     logger.error("Try adding a '/' to '%s'.", path)
-                return 1
+                    return 1
 
             if dest is None:
                 for item in source.listContents():
@@ -233,7 +236,7 @@ def main():
                 logger.info("Optimal synchronization:")
                 for sink, values in summary.items():
                     logger.info("%s from %d diffs in %s",
-                                Store.humanize(values.size),
+                                humanize(values.size),
                                 values.count,
                                 sink or "TOTAL",
                                 )
@@ -242,7 +245,7 @@ def main():
                     if diff is None:
                         raise Exception("Missing diff.  Can't fully replicate.")
                     else:
-                        diff.sendTo(dest, chunkSize=args.part_size << 20, progress=progress)
+                        diff.sendTo(dest, chunkSize=args.part_size << 20)
 
                 if args.delete:
                     dest.deleteUnused()

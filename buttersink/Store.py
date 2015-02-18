@@ -63,6 +63,11 @@ class Store(object):
         self.ignoreExtraVolumes = False
         self.isRemote = False
 
+        # False - Never show progress
+        # True - Always show progress
+        # None - Show progress for one-sided actions (e.g. measuring)
+        self.showProgress = None
+
     def __enter__(self):
         """ So we can use a 'with' statement. """
         self._open()
@@ -201,7 +206,7 @@ class Store(object):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def send(self, diff, progress=True):
+    def send(self, diff):
         """ Return Context Manager for a file-like (stream) object to send a diff. """
         raise NotImplementedError
 
@@ -317,7 +322,7 @@ class Diff:
         if self.fromVol is not None and size is not None and not sizeIsEstimated:
             Diff.theKnownSizes[self.toUUID][self.fromUUID] = size
 
-    def sendTo(self, dest, chunkSize, progress=True):
+    def sendTo(self, dest, chunkSize):
         """ Send this difference to the dest Store. """
         logger.info("%s: %s", "Keep" if self.sink == dest else "Xfer", self)
 
@@ -329,7 +334,7 @@ class Diff:
         else:
             receiveContext = dest.receive(self, paths)
 
-            sendContext = self.sink.send(self, progress)
+            sendContext = self.sink.send(self)
 
             # try:
             #     receiveContext.metadata['btrfsVersion'] = self.btrfsVersion
