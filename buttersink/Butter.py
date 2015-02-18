@@ -79,6 +79,9 @@ class Butter:
         if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
             return None
 
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
