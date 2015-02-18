@@ -20,7 +20,7 @@ makestamps :
 .PHONY : clean_setup
 clean_setup :
 	./setup.py clean
-	sudo rm -r build dist buttersink.egg-info || true
+	sudo rm -r build dist buttersink.egg-info 2>/dev/null || true
 
 .PHONY : install
 install : buttersink/version.py
@@ -29,7 +29,7 @@ install : buttersink/version.py
 
 .PHONY : clean
 clean : clean_setup
-	rm -r make || true
+	rm -r make 2>/dev/null || true
 
 .PHONY : pypi
 pypi : buttersink/version.py
@@ -62,22 +62,23 @@ EXEC=sudo -E ./buttersink.py ${OPTS}
 
 TEST_DIR=/mnt/butter/bs-test
 
-TEST_REMOTE_SSH=ssh://bak@proliant/mnt/butter/bak/test
-define CLEAN_REMOTE_SSH
+# TEST_METHODS=ssh
+TEST_METHODS=s3 ssh
+
+TEST_REMOTE_ssh=ssh://bak@proliant/mnt/butter/bak/test
+define CLEAN_REMOTE_ssh
 	ssh root@proliant btrfs sub del -c '/mnt/butter/bak/test/*' || true
 	ssh root@proliant rm '/mnt/butter/bak/test/*' || true
 endef
-TEST_RESTORE_SSH=${TEST_DIR}/restore_ssh
 
-TEST_REMOTE_S3=s3://butter-sink/test
-define CLEAN_REMOTE_S3
+TEST_REMOTE_s3=s3://butter-test/regress
+define CLEAN_REMOTE_s3
 	if which s3cmd; then \
-		s3cmd rm ${TEST_REMOTE_S3} --recursive ; \
+		s3cmd rm ${TEST_REMOTE_s3} --recursive ; \
 	else \
 		read -p "Please delete S3 test buckets, and press <enter> " FOO ; \
 	fi
 endef
-TEST_RESTORE_S3=${TEST_DIR}/restore_s3
 
 # Count of 100K chunks:
 # If this is more then 5Meg, it will trigger a multipart upload
@@ -93,13 +94,16 @@ test_quick : makestamps/test_code
 	@echo "*** Quick tests passed ***"
 .PHONY : test_quick
 
-test_restore : makestamps/test_restore_s3 makestamps/test_restore_ssh
-	@echo "*** Backup and restore tests passed ***"
-.PHONY : test_full
-
 test_full : test_restore test_quick
 	@echo "*** All tests passed ***"
 .PHONY : test_full
+
+test_restore : $(addprefix makestamps/test_restore_, ${TEST_METHODS}) makestamps/test_backup
+	@echo "*** Backup and restore tests passed ***"
+.PHONY : test_restore
+
+makestamps/test_backup : $(addprefix makestamps/test_backup_, ${TEST_METHODS})
+	touch $@
 
 makestamps/test_code : makestamps/source
 	flake8 buttersink
@@ -109,24 +113,17 @@ makestamps/test_code : makestamps/source
 
 .SECONDARY : $(addprefix ${TEST_DIR}/snaps/,A B C)
 
-makestamps/test_backup_ssh makestamps/test_restore_ssh : TEST_REMOTE=${TEST_REMOTE_SSH}
-makestamps/test_backup_ssh makestamps/test_restore_ssh : TEST_RESTORE=${TEST_RESTORE_SSH}
-makestamps/test_backup_ssh makestamps/test_restore_ssh : CLEAN_REMOTE=${CLEAN_REMOTE_SSH}
-makestamps/test_backup_s3 makestamps/test_restore_s3 : TEST_REMOTE=${TEST_REMOTE_S3}
-makestamps/test_backup_s3 makestamps/test_restore_s3 : TEST_RESTORE=${TEST_RESTORE_S3}
-makestamps/test_backup_s3 makestamps/test_restore_s3 : CLEAN_REMOTE=${CLEAN_REMOTE_S3}
-
-makestamps/test_backup_ssh makestamps/test_backup_s3 : $(addprefix ${TEST_DIR}/snaps/,A B C)
-	${CLEAN_REMOTE}
-	${EXEC} ${TEST_DIR}/snaps/ ${TEST_REMOTE}/
+makestamps/test_backup_% : $(addprefix ${TEST_DIR}/snaps/,A B C)
+	${CLEAN_REMOTE_$*}
+	${EXEC} ${TEST_DIR}/snaps/ ${TEST_REMOTE_$*}/
 	touch $@
 
 ${TEST_DIR} :
 	sudo btrfs sub create $@
 	sudo chown $$USER:$$USER $@
 
-${TEST_DIR}/snaps ${TEST_RESTORE_S3} ${TEST_RESTORE_SSH} : | ${TEST_DIR}
-	mkdir $@
+${TEST_DIR}/snaps ${TEST_DIR}/restore : | ${TEST_DIR}
+	mkdir -p $@
 
 ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 	dd if=/dev/urandom of=${TEST_DIR}/$*.dat bs=100K count=${TEST_DATA_COUNT}
@@ -138,33 +135,32 @@ ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 
 define CLEAN_TEST
 	sudo sync
-	sudo btrfs sub del -c ${TEST_DIR}/snaps/* 2>/dev/null || true
-	sudo rm ${TEST_DIR}/snaps/* 2>/dev/null || true
-	sudo btrfs sub del -c ${TEST_RESTORE}/* 2>/dev/null || true
-	sudo rm ${TEST_RESTORE}/* 2>/dev/null || true
+	sudo btrfs sub del -c ${TEST_DIR}/*/* 2>/dev/null || true
+	sudo rm ${TEST_DIR}/*/* 2>/dev/null || true
 	sudo rm ${TEST_DIR}/*.dat ${TEST_DIR}/sha256sum.txt 2>/dev/null || true
 endef
 
-.PHONY : clean_test
 clean_test :
 	${CLEAN_TEST}
-	sudo rm ${LOGFILE} || true
-	rm makestamps/test_* || true
-	${CLEAN_REMOTE_SSH}
-	${CLEAN_REMOTE_S3}
+	sudo rm ${LOGFILE} 2>/dev/null || true
+	rm makestamps/test_* 2>/dev/null || true
+	${CLEAN_REMOTE_ssh}
+	${CLEAN_REMOTE_s3}
+.PHONY : clean_test
 
-makestamps/test_restore_ssh makestamps/test_restore_s3 : makestamps/test_restore_% : makestamps/test_backup_% | ${TEST_DIR}/restore_% makestamps/test_backup_s3 makestamps/test_backup_ssh
+makestamps/test_restore_% : test_backup | ${TEST_DIR}/restore
 	$(CLEAN_TEST)
 	sudo sync
-	${EXEC} ${TEST_REMOTE}/${RESTORE_SNAP} ${TEST_RESTORE}/
+	${EXEC} ${TEST_REMOTE_$*}/${RESTORE_SNAP} ${TEST_DIR}/restore/
 	sudo sync
 	# Check that not *all* snapshots were restored
-	! ls -d $(addprefix ${TEST_RESTORE}/,A B C)
-	cd ${TEST_RESTORE}/${RESTORE_SNAP}; sha256sum --check sha256sum.txt
+	! ls -d $(addprefix ${TEST_DIR}/restore/,A B C)
+	cd ${TEST_DIR}/restore/${RESTORE_SNAP}; sha256sum --check sha256sum.txt
+	$(CLEAN_TEST)
 	touch $@
 
-.PHONY : test_list
 test_list :
 	${EXEC} ${TEST_REMOTE_SSH}/
 	${EXEC} ${TEST_REMOTE_S3}/
 	${EXEC} ${TEST_DIR}/snaps/
+.PHONY : test_list

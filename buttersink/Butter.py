@@ -15,6 +15,7 @@ if True:  # Headers
         import subprocess
         import sys
 
+        from progress import DisplayProgress
         import btrfs
         import send
         import Store
@@ -69,7 +70,7 @@ class Butter:
 
         return btrfsVersionString
 
-    def receive(self, path, diff):
+    def receive(self, path, diff, showProgress=True):
         """ Return a context manager for stream that will store a diff. """
         directory = os.path.dirname(path)
 
@@ -90,9 +91,9 @@ class Butter:
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return _Writer(process, process.stdin, path, diff)
+        return _Writer(process, process.stdin, path, diff, showProgress)
 
-    def send(self, targetPath, parent, diff, allowDryRun=True):
+    def send(self, targetPath, parent, diff, showProgress=True, allowDryRun=True):
         """ Return context manager for stream to send a (incremental) snapshot. """
         if parent is not None:
             cmd = ["btrfs", "send", "-p", parent, targetPath]
@@ -107,26 +108,32 @@ class Butter:
         ps = psutil.Process(process.pid)
         ps.ionice(psutil.IOPRIO_CLASS_IDLE)
 
-        return _Reader(process, process.stdout, targetPath, diff)
+        return _Reader(process, process.stdout, targetPath, diff, showProgress)
 
 
 class _Writer(io.RawIOBase):
 
     """ Context Manager to write a snapshot. """
 
-    def __init__(self, process, stream, path, diff):
+    def __init__(self, process, stream, path, diff, showProgress):
         self.process = process
         self.stream = stream
         self.path = path
         self.diff = diff
         self.bytesWritten = None
+        self.progress = DisplayProgress(diff.size) if showProgress else None
 
     def __enter__(self):
         self.bytesWritten = 0
+        if self.progress is not None:
+            self.progress.open()
         return self
 
     def __exit__(self, exceptionType, exception, trace):
         self.stream.close()
+
+        if self.progress is not None:
+            self.progress.close()
 
         if self.process is None:
             return
@@ -177,25 +184,33 @@ class _Writer(io.RawIOBase):
             )
         self.stream.write(data)
         self.bytesWritten += len(data)
+        if self.progress is not None:
+            self.progress.update(self.bytesWritten)
 
 
 class _Reader(io.RawIOBase):
 
     """ Context Manager to read a snapshot. """
 
-    def __init__(self, process, stream, path, diff):
+    def __init__(self, process, stream, path, diff, showProgress):
         self.process = process
         self.stream = stream
         self.path = path
         self.diff = diff
         self.bytesRead = None
+        self.progress = DisplayProgress() if showProgress else None
 
     def __enter__(self):
         self.bytesRead = 0
+        if self.progress is not None:
+            self.progress.open()
         return self
 
     def __exit__(self, exceptionType, exception, trace):
         self.stream.close()
+
+        if self.progress is not None:
+            self.progress.close()
 
         if self.process is None:
             return
@@ -226,6 +241,8 @@ class _Reader(io.RawIOBase):
                 self.diff.fromGen,
             )
         self.bytesRead += len(data)
+        if self.progress is not None:
+            self.progress.update(self.bytesRead)
         return data
 
     def seek(self, offset, whence):

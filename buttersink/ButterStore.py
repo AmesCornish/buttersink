@@ -175,7 +175,7 @@ class ButterStore(Store.Store):
                 "Path %s exists, can't receive %s" % (path, diff.toUUID)
             )
 
-        return self.butter.receive(path, diff)
+        return self.butter.receive(path, diff, self.showProgress is True)
 
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
@@ -197,7 +197,7 @@ class ButterStore(Store.Store):
 
         return estimatedSize
 
-    def measureSize(self, diff, chunkSize, isInteractive=False):
+    def measureSize(self, diff, chunkSize):
         """ Spend some time to get an accurate size. """
         self._fileSystemSync()
 
@@ -205,23 +205,25 @@ class ButterStore(Store.Store):
             self.getSendPath(diff.toVol),
             self.getSendPath(diff.fromVol),
             diff,
+            showProgress=self.showProgress is not False,
             allowDryRun=False,
         )
 
         class _Measure(io.RawIOBase):
 
-            def __init__(self, estimatedSize):
+            def __init__(self, estimatedSize, showProgress):
                 self.totalSize = None
-                suppress = False if isInteractive else None
-                self.progress = progress.DisplayProgress(estimatedSize, suppress=suppress)
+                self.progress = progress.DisplayProgress(estimatedSize) if showProgress else None
 
             def __enter__(self):
                 self.totalSize = 0
-                self.progress.__enter__()
+                if self.progress:
+                    self.progress.__enter__()
                 return self
 
             def __exit__(self, exceptionType, exceptionValue, traceback):
-                self.progress.__exit__(exceptionType, exceptionValue, traceback)
+                if self.progress:
+                    self.progress.__exit__(exceptionType, exceptionValue, traceback)
                 return False  # Don't supress exception
 
             def writable(self):
@@ -229,11 +231,12 @@ class ButterStore(Store.Store):
 
             def write(self, bytes):
                 self.totalSize += len(bytes)
-                self.progress.update(self.totalSize)
+                if self.progress:
+                    self.progress.update(self.totalSize)
 
         logger.info("Measuring %s", diff)
 
-        measure = _Measure(diff.size)
+        measure = _Measure(diff.size, self.showProgress is not False)
         Store.transfer(sendContext, measure, chunkSize)
 
         diff.setSize(measure.totalSize, False)
@@ -274,7 +277,7 @@ class ButterStore(Store.Store):
 
         return rate
 
-    def send(self, diff, progress=True):
+    def send(self, diff):
         """ Write the diff (toVol from fromVol) to the stream context manager. """
         if not self.dryrun:
             self._fileSystemSync()
@@ -283,6 +286,7 @@ class ButterStore(Store.Store):
             self.getSendPath(diff.toVol),
             self.getSendPath(diff.fromVol),
             diff,
+            self.showProgress is True,
         )
 
     def keep(self, diff):
