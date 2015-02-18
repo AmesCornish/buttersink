@@ -148,7 +148,7 @@ clean_test :
 	${CLEAN_REMOTE_s3}
 .PHONY : clean_test
 
-makestamps/test_restore_% : test_backup | ${TEST_DIR}/restore
+makestamps/test_restore_% : makestamps/test_backup | ${TEST_DIR}/restore
 	$(CLEAN_TEST)
 	sudo sync
 	${EXEC} ${TEST_REMOTE_$*}/${RESTORE_SNAP} ${TEST_DIR}/restore/
