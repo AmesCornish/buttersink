@@ -286,7 +286,7 @@ class ButterStore(Store.Store):
             self.getSendPath(diff.toVol),
             self.getSendPath(diff.fromVol),
             diff,
-            self.progress is True,
+            self.showProgress is True,
         )
 
     def keep(self, diff):
