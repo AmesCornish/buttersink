@@ -12,7 +12,7 @@ class DisplayProgress(object):
 
     """ Class to display Mbs progress on tty. """
 
-    def __init__(self, total=None, chunkName=None, parent=None, suppress=None):
+    def __init__(self, total=None, chunkName=None, parent=None):
         """ Initialize. """
         self.startTime = None
         self.offset = None
@@ -20,12 +20,13 @@ class DisplayProgress(object):
         self.name = chunkName
         self.parent = parent
         self.output = sys.stderr
-        self.suppress = suppress
-        if self.suppress is None:
-            self.suppress = not self.output.isatty()
 
     def __enter__(self):
         """ For with statement. """
+        self.open()
+
+    def open(self):
+        """ Reset time and counts. """
         self.startTime = datetime.datetime.now()
         self.offset = 0
         return self
@@ -53,9 +54,6 @@ class DisplayProgress(object):
         """ Display intermediate progress. """
         if self.parent is not None:
             self.parent._display(self.parent.offset + sent, now, chunk, mbps)
-            return
-
-        if self.suppress:
             return
 
         elapsed = now - self.startTime
@@ -86,6 +84,5 @@ class DisplayProgress(object):
         if self.parent:
             self.parent.update(self.parent.offset + self.offset)
             return
-        if self.suppress:
-            return
         self.output.write("\n")
+        self.output.flush()

@@ -8,7 +8,7 @@ Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 """
 
-from Store import humanize
+from util import humanize
 
 import collections
 import logging
@@ -121,7 +121,11 @@ class BestDiffs:
         self.dest = sinks[0]
 
         def currentSize():
-            return sum([n.diffSize for n in self.nodes.values() if n.diff.sink != self.dest])
+            return sum([
+                n.diffSize
+                for n in self.nodes.values()
+                if n.diff is not None and n.diff.sink != self.dest
+                ])
 
         while True:
             self._analyzeDontMeasure(chunkSize, measureSize, *sinks)
@@ -135,7 +139,7 @@ class BestDiffs:
 
             for node in self.nodes.values():
                 edge = node.diff
-                if measureSize and edge.sink != self.dest and edge.sizeIsEstimated:
+                if edge is not None and edge.sink != self.dest and edge.sizeIsEstimated:
                     edge.sink.measureSize(edge, chunkSize)
 
             actualSize = currentSize()
@@ -145,7 +149,7 @@ class BestDiffs:
                 humanize(actualSize), humanize(estimatedSize),
             )
 
-            if actualSize < 1.2 * estimatedSize:
+            if actualSize <= 1.2 * estimatedSize:
                 return
 
     def _analyzeDontMeasure(self, chunkSize, willMeasureLater, *sinks):
@@ -197,8 +201,9 @@ class BestDiffs:
                         if toVol in self.nodes:
                             toNode = self.nodes[toVol]
                         # Don't transfer any edges we won't need in the destination
-                        elif sink != self.dest:
-                            continue
+                        # elif sink != self.dest:
+                        #     logger.debug("Won't transfer unnecessary %s", edge)
+                        #     continue
                         else:
                             toNode = _Node(toVol, True)
                             self.nodes[toVol] = toNode
@@ -213,6 +218,9 @@ class BestDiffs:
                                 edgeSize *= 2
 
                         newCost = self._cost(sink, edgeSize, fromSize, height)
+                        if toNode.intermediate and sink != self.dest:
+                            newCost += fromSize
+
                         if toNode.diff is None:
                             oldCost = None
                         else:

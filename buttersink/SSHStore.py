@@ -251,7 +251,7 @@ class SSHStore(Store.Store):
         """ True if Store already contains this edge. """
         return diff.toVol in self.paths and diff.fromVol in self.paths
 
-    def send(self, diff, progress=True):
+    def send(self, diff):
         """ Return Context Manager for a file-like (stream) object to send a diff. """
         if Store.skipDryRun(logger, self.dryrun)("send %s", diff):
             return None
@@ -259,7 +259,8 @@ class SSHStore(Store.Store):
         (diffTo, diffFrom) = self.toArg.diff(diff)
         self._client.send(diffTo, diffFrom)
 
-        return _SSHStream(self._client, DisplayProgress(diff.size))
+        progress = DisplayProgress(diff.size) if self.showProgress is True else None
+        return _SSHStream(self._client, progress)
 
     def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """
@@ -272,7 +273,8 @@ class SSHStore(Store.Store):
         (diffTo, diffFrom) = self.toArg.diff(diff)
         self._client.receive(path, diffTo, diffFrom)
 
-        return _SSHStream(self._client, DisplayProgress(diff.size))
+        progress = DisplayProgress(diff.size) if self.showProgress is True else None
+        return _SSHStream(self._client, progress)
 
     def receiveVolumeInfo(self, paths):
         """ Return Context Manager for a file-like (stream) object to store volume info. """
@@ -571,7 +573,7 @@ class StoreProxyServer(object):
     def send(self, diffTo, diffFrom):
         """ Do a btrfs send. """
         diff = self.toObj.diff(diffTo, diffFrom)
-        self._open(self.butterStore.send(diff, progress=False))
+        self._open(self.butterStore.send(diff))
 
     @command('receive', 'a')
     def receive(self, path, diffTo, diffFrom):
@@ -628,7 +630,8 @@ class StoreProxyServer(object):
         """ Spend some time to get an accurate size. """
         diff = self.toObj.diff(diffTo, diffFrom, estimatedSize)
         isInteractive = self.toObj.bool(isInteractive)
-        self.butterStore.measureSize(diff, int(chunkSize), isInteractive)
+        self.butterStore.showProgress = None if isInteractive else False
+        self.butterStore.measureSize(diff, int(chunkSize))
         return self.toDict.diff(diff)
 
     @command('keep', 'r')
