@@ -125,7 +125,7 @@ class BestDiffs:
                 n.diffSize
                 for n in self.nodes.values()
                 if n.diff is not None and n.diff.sink != self.dest
-                ])
+            ])
 
         while True:
             self._analyzeDontMeasure(chunkSize, measureSize, *sinks)
@@ -174,14 +174,9 @@ class BestDiffs:
                 if fromNode is not None and fromNode.diffSize is None:
                     continue
 
-                fromSize = self._totalSize(fromNode)
                 fromVol = fromNode.volume if fromNode else None
 
-                # logger.debug(
-                #     "Following edges from %s (total %s)",
-                #     fromNode.display(sinks[-1]) if fromNode is not None else None,
-                #     humanize(fromSize),
-                # )
+                logger.debug("Following edges from %s", fromVol)
 
                 for sink in sinks:
                     # logger.debug(
@@ -208,6 +203,8 @@ class BestDiffs:
                             toNode = _Node(toVol, True)
                             self.nodes[toVol] = toNode
 
+                        logger.debug("Considering %s", edge)
+
                         edgeSize = edge.size
                         if edge.sizeIsEstimated:
                             if willMeasureLater:
@@ -217,9 +214,7 @@ class BestDiffs:
                                 # Large preference for accurate sizes
                                 edgeSize *= 2
 
-                        newCost = self._cost(sink, edgeSize, fromSize, height)
-                        if toNode.intermediate and sink != self.dest:
-                            newCost += fromSize
+                        newCost = self._cost(sink, edgeSize, fromNode, height)
 
                         if toNode.diff is None:
                             oldCost = None
@@ -227,7 +222,7 @@ class BestDiffs:
                             oldCost = self._cost(
                                 toNode.sink,
                                 toNode.diffSize,
-                                fromSize,
+                                self._getNode(toNode.previous),
                                 self._height(toNode)
                             )
 
@@ -252,12 +247,12 @@ class BestDiffs:
                             humanize(newCost),
                             toNode.display(sink)
                         )
-                        logger.debug("Cost elements: %s", dict(
-                            sink=str(sink),
-                            edgeSize=humanize(edgeSize),
-                            fromSize=humanize(fromSize),
-                            height=height,
-                        ))
+                        # logger.debug("Cost elements: %s", dict(
+                        #     sink=str(sink),
+                        #     edgeSize=humanize(edgeSize),
+                        #     fromSize=humanize(fromSize),
+                        #     height=height,
+                        # ))
 
                         toNode.diff = edge
 
@@ -322,16 +317,19 @@ class BestDiffs:
             done = True
             for node in [node for node in self.nodes.values() if node.intermediate]:
                 if not [dep for dep in self.nodes.values() if dep.previous == node.volume]:
-                    logger.debug("Removing unnecessary node %s", node)
+                    # logger.debug("Removing unnecessary node %s", node)
                     del self.nodes[node.volume]
                     done = False
 
-    def _cost(self, sink, size, prevSize, height):
+    def _cost(self, sink, size, prevNode, height):
         cost = 0
+        prevSize = self._totalSize(prevNode)
 
         # Transfer
         if sink != self.dest:
             cost += size
+            if prevNode is not None and prevNode.intermediate and prevNode.sink != self.dest:
+                cost += prevSize
 
         # Storage
         if sink != self.dest or self.delete:
@@ -340,9 +338,9 @@ class BestDiffs:
         # Corruption risk
         cost += (prevSize + size) * (2 ** (height - 8))
 
-        # logger.debug(
-        #     "_cost=%d (%s %d %d %d)",
-        #     humanize(cost), sink, humanize(size), humanize(prevSize), height,
-        #     )
+        logger.debug(
+            "_cost=%s (%s %s %s %d)",
+            humanize(cost), sink, humanize(size), humanize(prevSize), height,
+        )
 
         return cost
