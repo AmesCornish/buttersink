@@ -44,15 +44,20 @@ for DIR in "$@"; do
 	# The top level directory is recreated on receive, so is not immutable.
 	# Mountpoints are deleted by btrfs send and receive, so they are not immutable, 
 	# nor are the directories that contain them.
+	echo "Getting directory entries for $DIR..."
 	FMT="%M %n %4U %4G %TY-%Tm-%Td %TT %P\n"
 	TZ=UTC find -not -path "." -not \( -type d -execdir mountpoint -q {} \; \) -printf "$FMT" | \
 		sort --key 7 > "$RUN_DIR/$NAME.ls"
 
+	# This checksums all the data in all the files.
+	echo "Checksumming file data in $DIR..."
 	find -type f -exec $SUM {} \; | \
 		sort --key 2 > "$RUN_DIR/$NAME.files"
 
 	cd "$RUN_DIR"
 
+	# This produces overall checksums.  If these are the same, then snapshots are identical.
+	echo "Producing overall checksums in $NAME.$SUM"
 	$SUM "$NAME".ls "$NAME".files > "$NAME.$SUM"
 done
 

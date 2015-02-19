@@ -97,15 +97,15 @@ def _setupLogging(quiet, logFile, isServer):
     theDisplayFormat = '%(message)s'
     theDebugDisplayFormat = (
         '%(levelname)7s:'
-        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+        '%(filename)s[%(lineno)d]: %(message)s'
     )
     theLogFormat = (
         '%(asctime)-15s: %(levelname)7s:'
-        '%(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+        '%(filename)s[%(lineno)d]: %(message)s'
     )
     theProgram = "buttersink[%d]" % (os.getpid())
     theSysLogFormat = (
-        theProgram + ': %(filename)s[%(lineno)d] %(funcName)s(): %(message)s'
+        theProgram + ': %(filename)s[%(lineno)d]: %(message)s'
     )
 
     root = logging.getLogger()

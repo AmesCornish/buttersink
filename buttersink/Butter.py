@@ -152,6 +152,7 @@ class _Writer(io.RawIOBase):
             return
 
         if self.process.returncode != 0:
+            logger.error("btrfs receive errors")
             for line in self.process.stderr:
                 sys.stderr.write(line)
 
@@ -164,6 +165,7 @@ class _Writer(io.RawIOBase):
                 partial = self.path + "_" + datetime.datetime.now().isoformat() + ".part"
 
             os.rename(self.path, partial)
+            logger.debug("Renamed %s to %s", self.path, partial)
 
         if exception is None:
             raise Exception(
@@ -219,6 +221,7 @@ class _Reader(io.RawIOBase):
         self.process.wait()
 
         if self.process.returncode != 0:
+            logger.error("btrfs send errors")
             for line in self.process.stderr:
                 sys.stderr.write(line)
 
