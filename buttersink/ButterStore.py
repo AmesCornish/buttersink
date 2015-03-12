@@ -75,7 +75,7 @@ class ButterStore(Store.Store):
                 path = bv.fullPath
 
                 if path is None:
-                    logger.warn("Skipping deleted volume %s", bv.uuid)
+                    logger.info("Skipping deleted volume %s", bv.uuid)
                     continue
 
                 relPath = None
