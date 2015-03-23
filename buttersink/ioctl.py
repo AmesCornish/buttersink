@@ -6,8 +6,12 @@ import array
 import collections
 import fcntl
 import itertools
+import logging
 import os
 import struct
+
+logger = logging.getLogger(__name__)
+# logger.setLevel('DEBUG')
 
 # constant for linux portability
 NRBITS = 8
@@ -223,7 +227,11 @@ class Structure:
 
     def read(self, data, offset=0):
         """ Read data structure and return (nested) named tuple(s). """
-        args = list(self._struct.unpack_from(data, offset))
+        try:
+            args = list(self._struct.unpack_from(data, offset))
+        except TypeError:
+            logger.debug("Working around struct.unpack_from issue #10212")
+            args = list(self._struct.unpack_from(data.tobytes(), offset))
         args.reverse()
         return self.popValue(args)
 
