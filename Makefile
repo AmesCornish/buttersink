@@ -60,6 +60,11 @@ OPTS:=-l ${LOGFILE}
 OPTS:=${OPTS} --part-size=5
 EXEC=sudo -E ./buttersink.py ${OPTS}
 
+# This is useful for testing with old versions of python
+# PYTHONPATH=/usr/local/lib/python2.7/dist-packages:/usr/lib/python2.7/dist-packages
+# PYTHON=/home/ames/python/bin/python
+# EXEC=sudo -E PYTHONPATH=${PYTHONPATH} ${PYTHON} ./buttersink.py ${OPTS}
+
 TEST_DIR=/mnt/butter/bs-test
 
 # TEST_METHODS=ssh

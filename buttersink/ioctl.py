@@ -230,8 +230,8 @@ class Structure:
         try:
             args = list(self._struct.unpack_from(data, offset))
         except TypeError:
-            logger.debug("Working around struct.unpack_from issue #10212")
-            args = list(self._struct.unpack_from(data.tobytes(), offset))
+            # Working around struct.unpack_from issue #10212
+            args = list(self._struct.unpack_from(str(bytearray(data)), offset))
         args.reverse()
         return self.popValue(args)
 

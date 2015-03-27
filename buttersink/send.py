@@ -129,7 +129,11 @@ def TLV_GET(attrs, attrNum, format):
     attrView = attrs[attrNum]
     if format == 's':
         format = str(attrView.len) + format
-    (result,) = struct.unpack_from(format, attrView.buf, attrView.offset)
+    try:
+        (result,) = struct.unpack_from(format, attrView.buf, attrView.offset)
+    except TypeError:
+        # Working around struct.unpack_from issue #10212
+        (result,) = struct.unpack_from(format, str(bytearray(attrView.buf)), attrView.offset)
     return result
 
 
