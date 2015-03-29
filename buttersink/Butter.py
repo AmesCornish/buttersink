@@ -88,8 +88,11 @@ class Butter:
             stderr=subprocess.PIPE,
             stdout=DEVNULL,
         )
-        ps = psutil.Process(process.pid)
-        ps.ionice(psutil.IOPRIO_CLASS_IDLE)
+        try:
+            ps = psutil.Process(process.pid)
+            ps.ionice(psutil.IOPRIO_CLASS_IDLE)
+        except AttributeError:
+            pass
 
         return _Writer(process, process.stdin, path, diff, showProgress)
 
@@ -105,8 +108,11 @@ class Butter:
 
         process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=DEVNULL)
-        ps = psutil.Process(process.pid)
-        ps.ionice(psutil.IOPRIO_CLASS_IDLE)
+        try:
+            ps = psutil.Process(process.pid)
+            ps.ionice(psutil.IOPRIO_CLASS_IDLE)
+        except AttributeError:
+            pass
 
         return _Reader(process, process.stdout, targetPath, diff, showProgress)
 
