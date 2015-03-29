@@ -1,6 +1,6 @@
 """ Interface to btrfs-tools for snapshots.
 
-Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+Copyright (c) 2014-2015 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 """
 
@@ -36,6 +36,14 @@ if True:  # Headers
 FIXUP_AFTER_RECEIVE = False
 FIXUP_DURING_SEND = True
 FIXUP_DURING_RECEIVE = True
+
+
+def _makeNice(process):
+    try:
+        ps = psutil.Process(process.pid)
+        ps.ionice(psutil.IOPRIO_CLASS_IDLE)
+    except AttributeError:
+        logger.debug("ionice is not available")
 
 
 class Butter:
@@ -88,11 +96,7 @@ class Butter:
             stderr=subprocess.PIPE,
             stdout=DEVNULL,
         )
-        try:
-            ps = psutil.Process(process.pid)
-            ps.ionice(psutil.IOPRIO_CLASS_IDLE)
-        except AttributeError:
-            pass
+        _makeNice(process)
 
         return _Writer(process, process.stdin, path, diff, showProgress)
 
@@ -108,11 +112,7 @@ class Butter:
 
         process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=DEVNULL)
-        try:
-            ps = psutil.Process(process.pid)
-            ps.ionice(psutil.IOPRIO_CLASS_IDLE)
-        except AttributeError:
-            pass
+        _makeNice(process)
 
         return _Reader(process, process.stdout, targetPath, diff, showProgress)
 

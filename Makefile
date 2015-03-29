@@ -95,6 +95,9 @@ RESTORE_SNAP=B
 
 DEBUG_CODE=^[^\#]*logger\.setLevel\(|^theDebug = True|pudb
 
+test : test_full ;
+.PHONY : test
+
 test_quick : makestamps/test_code
 	@echo "*** Quick tests passed ***"
 .PHONY : test_quick
