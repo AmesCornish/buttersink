@@ -218,7 +218,10 @@ def main():
                 logger.warn("No snapshots in source.")
                 path = args.source or args.dest
                 if not path.endswith("/"):
-                    logger.error("Try adding a '/' to '%s'.", path)
+                    logger.error(
+                        "'%s' is not a snapshot.  Did you mean to type '%s/'?",
+                        path, path
+                        )
                     return 1
 
             if dest is None:
@@ -261,7 +264,9 @@ def main():
         ):
             logger.error("You must be root to access a btrfs filesystem.  Use  'sudo'")
         else:
-            logger.exception("")
+            if not theDebug:
+                logger.debug("Trace information for debugging", exc_info=True)
+            logger.error("ERROR: %s.", error, exc_info=theDebug)
         return 1
 
 if __name__ == "__main__":
