@@ -32,7 +32,7 @@ setup(
             ],
     },
 
-    install_requires=['boto', 'psutil'],
+    install_requires=['boto', 'crcmod', 'psutil'],
 
     # These will be in the package subdirectory, accessible by package code
     # package_data={
