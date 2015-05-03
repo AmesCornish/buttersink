@@ -675,7 +675,14 @@ class FileSystem(ioctl.Device):
                         data.exclusive < 0 or
                         data.referenced < data.exclusive
                     ):
-                        raise _BtrfsError("Btrfs returned corrupt sizes")
+                        raise _BtrfsError(
+                            "Btrfs returned corrupt size of %s (%s exclusive) for %s" %
+                            (
+                                humanize(vol.totalSize or -1),
+                                humanize(vol.exclusiveSize or -1),
+                                vol.fullPath,
+                            )
+                        )
 
                 except KeyError:
                     pass
