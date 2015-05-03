@@ -384,9 +384,12 @@ class _Volume(object):
     def fullPath(self):
         """ Return full butter path from butter root. """
         for ((dirTree, dirID, dirSeq), (dirPath, name)) in self.links.items():
-            path = self.fileSystem.volumes[dirTree].fullPath
-            if path is not None:
-                return path + ("/" if path[-1] != "/" else "") + dirPath + name
+            try:
+                path = self.fileSystem.volumes[dirTree].fullPath
+                if path is not None:
+                    return path + ("/" if path[-1] != "/" else "") + dirPath + name
+            except:
+                logging.debug("Haven't imported %d yet", dirTree)
 
         if self.id == BTRFS_FS_TREE_OBJECTID:
             return "/"
