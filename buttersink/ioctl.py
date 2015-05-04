@@ -227,10 +227,14 @@ class Structure:
 
     def read(self, data, offset=0):
         """ Read data structure and return (nested) named tuple(s). """
+        if isinstance(data, Buffer):
+            return data.read(self)
+
         try:
             args = list(self._struct.unpack_from(data, offset))
-        except TypeError:
+        except TypeError as error:
             # Working around struct.unpack_from issue #10212
+            logger.debug("error: %s", error)
             args = list(self._struct.unpack_from(str(bytearray(data)), offset))
         args.reverse()
         return self.popValue(args)
@@ -256,8 +260,10 @@ class Buffer:
         """ Advance. """
         self.offset += length
 
-    def readView(self, newLength):
+    def readView(self, newLength=None):
         """ Return a view of the next newLength bytes, and skip it. """
+        if newLength is None:
+            newLength = self.len
         result = self.peekView(newLength)
         self.skip(newLength)
         return result

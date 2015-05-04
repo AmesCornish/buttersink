@@ -186,6 +186,15 @@ btrfs_root_item = Structure(
     packed=True
 )
 
+btrfs_dir_item = Structure(
+    (btrfs_disk_key, 'location'),
+    (t.le64, 'transid'),
+    (t.le16, 'data_len'),
+    (t.le16, 'name_len'),
+    (t.u8, 'type'),
+    packed=True
+)
+
 btrfs_root_ref = Structure(
     (t.le64, 'dirid'),
     (t.le64, 'sequence'),
@@ -473,17 +482,18 @@ class FileSystem(ioctl.Device):
         """ Initialize. """
         super(FileSystem, self).__init__(path)
 
+        self.defaultID = None
         self.devices = []
-        self.mounts = {}
         self.volumes = {}
+        self.mounts = {}
 
     @property
     def subvolumes(self):
         """ Subvolumes contained in this mount. """
         self.SYNC()
         self._getDevices()
-        self._getMounts()
         self._getRoots()
+        self._getMounts()
         self._getUsage()
 
         volumes = self.volumes.values()
@@ -528,11 +538,13 @@ class FileSystem(ioctl.Device):
         if self.mounts:
             return
 
-        defaultSubvol = self.DEFAULT_SUBVOL().id
-        if defaultSubvol == 0:
+        if self.defaultID is None:
+            logger.warn("Default subvolume not identified")
             defaultSubvol = ""
         else:
-            defaultSubvol = self.volumes[defaultSubvol].fullPath.rstrip("/")
+            defaultSubvol = self.volumes[self.defaultID].fullPath.rstrip("/")
+
+        logger.debug("Default subvolume: %s", defaultSubvol)
 
         with open("/etc/mtab") as mtab:
             for line in mtab:
@@ -607,20 +619,15 @@ class FileSystem(ioctl.Device):
                 # logger.debug("Object %d: %s", i, pretty(data))
 
                 # assert buf.len >= data.len, (buf.len, data.len)
-                yield (data, buf.readView(data.len))
+                yield (data, buf.readBuffer(data.len))
 
                 key = FileSystem.Key(data.objectid, data.type, data.offset).next()
 
     def _getRoots(self):
         for (header, buf) in self._walkTree(BTRFS_ROOT_TREE_OBJECTID):
             if header.type == objectTypeKeys['BTRFS_ROOT_BACKREF_KEY']:
-                data = Structure(
-                    (btrfs_root_ref, 'ref'),
-                    (t.char, 'name', header.len - btrfs_root_ref.size),
-                ).read(buf)
-
-                info = data.ref
-                name = data.name
+                info = buf.read(btrfs_root_ref)
+                name = buf.readView(info.name_len).tobytes()
 
                 directory = self.INO_LOOKUP(treeid=header.offset, objectid=info.dirid)
 
@@ -635,9 +642,9 @@ class FileSystem(ioctl.Device):
                 )
             elif header.type == objectTypeKeys['BTRFS_ROOT_ITEM_KEY']:
                 if header.len == btrfs_root_item.size:
-                    info = btrfs_root_item.read(buf)
+                    info = buf.read(btrfs_root_item)
                 elif header.len == btrfs_root_item_v0.size:
-                    info = btrfs_root_item_v0.read(buf)
+                    info = buf.read(btrfs_root_item_v0)
                 else:
                     assert False, header.len
 
@@ -653,6 +660,12 @@ class FileSystem(ioctl.Device):
                         header.offset,
                         info,
                     )
+            elif header.type == objectTypeKeys['BTRFS_DIR_ITEM_KEY']:
+                info = buf.read(btrfs_dir_item)
+                name = buf.readView(info.name_len).tobytes()
+                if name == "default":
+                    self.defaultID = info.location.objectid
+                logger.debug("Found dir '%s' is %d", name, self.defaultID)
 
     def _getUsage(self):
         try:

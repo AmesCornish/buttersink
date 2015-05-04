@@ -70,10 +70,10 @@ TEST_DIR=/mnt/butter/bs-test
 # TEST_METHODS=ssh
 TEST_METHODS=s3 ssh
 
-TEST_REMOTE_ssh=ssh://bak@proliant/mnt/butter/bak/test
+TEST_REMOTE_ssh=ssh://bak@proliant.local/mnt/butter/bak/test
 define CLEAN_REMOTE_ssh
-	ssh root@proliant btrfs sub del -c '/mnt/butter/bak/test/*' || true
-	ssh root@proliant rm '/mnt/butter/bak/test/*' || true
+	ssh root@proliant.local btrfs sub del -c '/mnt/butter/bak/test/*' || true
+	ssh root@proliant.local rm '/mnt/butter/bak/test/*' || true
 endef
 
 TEST_REMOTE_s3=s3://butter-test/regress
