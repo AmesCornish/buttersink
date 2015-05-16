@@ -446,7 +446,8 @@ class _Volume(object):
         """ Delete this subvolume from the filesystem. """
         path = next(iter(self.linuxPaths))
         directory = _Directory(os.path.dirname(path))
-        directory.SNAP_DESTROY(name=os.path.basename(path))
+        with directory as device:
+            device.SNAP_DESTROY(name=str(os.path.basename(path)), )
 
     def copy(self, path):
         """ Make another snapshot of this into dirName. """

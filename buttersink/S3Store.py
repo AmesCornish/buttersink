@@ -100,7 +100,10 @@ class S3Store(Store.Store):
             upload.cancel_upload()
 
     def _fillVolumesAndPaths(self, paths):
-        """ Fill in self.paths. """
+        """ Fill in paths.
+
+        :arg paths: = { Store.Volume: ["linux path",]}
+        """
         self.diffs = collections.defaultdict((lambda: []))
         self.extraKeys = {}
 

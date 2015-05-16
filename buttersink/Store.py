@@ -139,6 +139,12 @@ class Store(object):
         return os.path.normpath(os.path.join(self.userPath, path))
 
     def _relativePath(self, fullPath):
+        """ Return fullPath relative to Store directory.
+
+        Return fullPath if fullPath is not inside directory.
+
+        Return None if fullPath is outside our scope.
+        """
         if fullPath is None:
             return None
 
@@ -177,7 +183,7 @@ class Store(object):
 
     @abc.abstractmethod
     def _fillVolumesAndPaths(self, paths):
-        """ Fill in self.paths.
+        """ Fill in paths.
 
         :arg paths: = { Store.Volume: ["linux path",]}
         """

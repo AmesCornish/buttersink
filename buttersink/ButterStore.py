@@ -46,7 +46,7 @@ class ButterStore(Store.Store):
         self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
         self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
-        self.extraVolumes = {}
+        self.extraVolumes = {}  # Will hold volumes inside store directory, but no longer in source
 
     def _btrfsVol2StoreVol(self, bvol):
         if bvol.received_uuid is not None:
@@ -62,7 +62,10 @@ class ButterStore(Store.Store):
         return Store.Volume(uuid, gen, bvol.totalSize, bvol.exclusiveSize)
 
     def _fillVolumesAndPaths(self, paths):
-        """ Return [{vol: [path,]},] for self.paths. """
+        """ Fill in paths.
+
+        :arg paths: = { Store.Volume: ["linux path",]}
+        """
         with self.btrfs as mount:
             for bv in mount.subvolumes:
                 if not bv.readOnly:
@@ -84,7 +87,7 @@ class ButterStore(Store.Store):
                     path = self._relativePath(path)
 
                     if path is None:
-                        continue
+                        continue  # path is outside store scope
 
                     paths[vol].append(path)
 
@@ -111,6 +114,7 @@ class ButterStore(Store.Store):
                 self.butterVolumes[vol.uuid] = bv
 
                 if relPath is not None:
+                    # vol is inside Store directory
                     self.extraVolumes[vol] = relPath
 
     def _fileSystemSync(self):

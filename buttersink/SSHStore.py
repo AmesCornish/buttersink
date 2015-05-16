@@ -15,6 +15,7 @@ import os.path
 import platform
 import subprocess
 import sys
+import traceback
 import urllib
 
 logger = logging.getLogger(__name__)
@@ -221,7 +222,10 @@ class SSHStore(Store.Store):
     # Abstract methods
 
     def _fillVolumesAndPaths(self, paths):
-        """ Fill in self.paths. """
+        """ Fill in paths.
+
+        :arg paths: = { Store.Volume: ["linux path",]}
+        """
         for (volDict, volPaths) in self._client.fillVolumesAndPaths():
             vol = Store.Volume(**volDict)
             paths[vol] = volPaths
@@ -503,6 +507,18 @@ class StoreProxyServer(object):
 
         return 0
 
+    def _errorInfo(self, command, error):
+        trace = traceback.format_exc()
+        trace = trace.splitlines()[-3]
+
+        return dict(
+            error=str(error),
+            errorType=type(error).__name__,
+            command=command,
+            server=True,
+            traceback=trace,
+            )
+
     def _sendResult(self, result):
         """ Send parseable json result of command. """
         # logger.debug("Result: %s", result)
@@ -510,12 +526,7 @@ class StoreProxyServer(object):
         try:
             result = json.dumps(result)
         except Exception as error:
-            result = json.dumps(dict(
-                error=str(error),
-                errorType=type(error).__name__,
-                command=command,
-                server=True,
-            ))
+            result = json.dumps(self._errorInfo(command, error))
 
         sys.stdout.write(result)
         sys.stdout.write("\n")
@@ -549,8 +560,7 @@ class StoreProxyServer(object):
                 result = dict(command=command, success=True)
         except Exception as error:
             # logger.exception("Failed %s", command)
-            result = dict(error=str(error), errorType=type(
-                error).__name__, command=command, server=True)
+            result = self._errorInfo(command, error)
 
         self._sendResult(result)
 

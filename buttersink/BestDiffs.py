@@ -336,7 +336,7 @@ class BestDiffs:
             cost += size / 16
 
         # Corruption risk
-        cost += (prevSize + size) * (2 ** (height - 8))
+        cost += (prevSize + size) * (2 ** (height - 6))
 
         logger.debug(
             "_cost=%s (%s %s %s %d)",
