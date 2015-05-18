@@ -190,7 +190,7 @@ def main():
 
         _setupLogging(args.quiet, args.logfile, args.server)
 
-        logger.debug("Arguments: %s", vars(args))
+        logger.debug("Version: %s, Arguments: %s", theVersion, vars(args))
 
         if args.server:
             server = SSHStore.StoreProxyServer(args.dest, args.mode)

@@ -355,7 +355,7 @@ class _Volume(object):
 
     def __init__(self, fileSystem, rootid, generation, info):
         """ Initialize. """
-        logger.debug("Volume %d/%d: %s", rootid, generation, pretty(info))
+        # logger.debug("Volume %d/%d: %s", rootid, generation, pretty(info))
         self.fileSystem = fileSystem
         self.id = rootid  # id in BTRFS_ROOT_TREE_OBJECTID, also FS treeid for this volume
         self.original_gen = info.otransid
@@ -547,9 +547,14 @@ class FileSystem(ioctl.Device):
 
         logger.debug("Default subvolume: %s", defaultSubvol)
 
-        with open("/etc/mtab") as mtab:
+        with open("/proc/self/mountinfo") as mtab:
             for line in mtab:
-                (dev, path, fs, opts, freq, passNum) = line.split()
+                # (dev, path, fs, opts, freq, passNum) = line.split()  # /etc/mtab
+
+                (left, _, right) = line.partition(" - ")
+                (mountID, parentID, devIDs, subvol, path, mountOpts) = left.split()[:6]
+                (fs, dev, superOpts) = right.split()
+
                 if fs != "btrfs":
                     continue
                 if dev not in self.devices:
@@ -559,12 +564,6 @@ class FileSystem(ioctl.Device):
                     )
                     continue
 
-                opts = {
-                    opt: value
-                    for (opt, _, value) in
-                    [o.partition("=") for o in opts.split(",")]
-                }
-                subvol = "/" + opts.get('subvol', defaultSubvol)
                 self.mounts[subvol] = path
                 logger.debug("%s: %s", subvol, path)
 
