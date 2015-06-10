@@ -14,6 +14,7 @@ if True:  # Imports and constants
         import util
 
         import boto
+        import boto.s3.connection
         import collections
         import io
         import logging
@@ -65,7 +66,14 @@ class S3Store(Store.Store):
         logger.info("Listing %s contents...", self)
 
         try:
-            s3 = boto.connect_s3()
+            # Orginary calling format returns a 301 without specifying a location.
+            # Subdomain calling format does not require specifying the region.
+            s3 = boto.s3.connection.S3Connection(
+                # calling_format=boto.s3.connection.ProtocolIndependentOrdinaryCallingFormat(),
+                calling_format=boto.s3.connection.SubdomainCallingFormat(),
+                )
+            # s3 = boto.connect_s3()   # Often fails with 301
+            # s3 = boto.s3.connect_to_region('us-west-2')  # How would we know the region?
         except boto.exception.NoAuthHandlerFound:
             logger.error("Try putting S3 credentials into ~/.boto")
             raise

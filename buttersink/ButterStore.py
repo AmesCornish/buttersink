@@ -165,7 +165,7 @@ class ButterStore(Store.Store):
 
     def hasEdge(self, diff):
         """ True if Store already contains this edge. """
-        return diff.toUUID in self.butterVolumes and diff.fromUUID in self.butterVolumes
+        return diff.toUUID in self.butterVolumes
 
     def receive(self, diff, paths):
         """ Return Context Manager for a file-like (stream) object to store a diff. """

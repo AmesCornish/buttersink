@@ -253,7 +253,7 @@ class SSHStore(Store.Store):
 
     def hasEdge(self, diff):
         """ True if Store already contains this edge. """
-        return diff.toVol in self.paths and diff.fromVol in self.paths
+        return diff.toVol in self.paths
 
     def send(self, diff):
         """ Return Context Manager for a file-like (stream) object to send a diff. """

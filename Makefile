@@ -74,6 +74,7 @@ TEST_REMOTE_ssh=ssh://bak@proliant.local/mnt/butter/bak/test
 define CLEAN_REMOTE_ssh
 	ssh root@proliant.local btrfs sub del -c '/mnt/butter/bak/test/*' || true
 	ssh root@proliant.local rm '/mnt/butter/bak/test/*' || true
+	ssh root@proliant.local mkdir -p '/mnt/butter/bak/test' || true
 endef
 
 TEST_REMOTE_s3=s3://butter-test/regress
@@ -113,7 +114,7 @@ test_restore : $(addprefix makestamps/test_restore_, ${TEST_METHODS}) makestamps
 makestamps/test_backup : $(addprefix makestamps/test_backup_, ${TEST_METHODS})
 	touch $@
 
-makestamps/test_code : makestamps/source
+makestamps/test_code : makestamps/source all
 	flake8 buttersink
 	python -m doctest buttersink/ioctl.py
 	! grep -IE "${DEBUG_CODE}" $$(find -name '*.py')

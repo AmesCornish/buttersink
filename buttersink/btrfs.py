@@ -608,7 +608,7 @@ class FileSystem(ioctl.Device):
             buf = ioctl.Buffer(result.buf)
             results = result.key.nr_items
 
-            logger.debug("Reading %d nodes from %d bytes", results, buf.len)
+            # logger.debug("Reading %d nodes from %d bytes", results, buf.len)
             if results == 0:
                 break
 
