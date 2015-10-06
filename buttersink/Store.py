@@ -330,14 +330,16 @@ class Diff:
 
     def sendTo(self, dest, chunkSize):
         """ Send this difference to the dest Store. """
-        logger.info("%s: %s", "Keep" if self.sink == dest else "Xfer", self)
-
         vol = self.toVol
         paths = self.sink.getPaths(vol)
 
         if self.sink == dest:
+            logger.info("Keep: %s", self)
             self.sink.keep(self)
         else:
+            # Log, but don't skip yet, so we can log more detailed skipped actions later
+            skipDryRun(logger, dest.dryrun, 'INFO')("Xfer: %s", self)
+
             receiveContext = dest.receive(self, paths)
 
             sendContext = self.sink.send(self)
@@ -524,20 +526,22 @@ def _printUUID(uuid, detail='word'):
 
 
 def skipDryRun(logger, dryRun, level=logging.DEBUG):
-    """ Print or log command about to be run.
+    """ Return logging function.
 
-    Return True if should be skipped. """
-    # This is an undocumented "feature"
-    # logging.log() require a numeric level
-    # logging.getLevelName() also maps names to numbers
+    When logging function called, will return True if action should be skipped.
+    Log will indicate if skipped because of dry run.
+    """
+    # This is an undocumented "feature" of logging module:
+    # logging.log() requires a numeric level
+    # logging.getLevelName() maps names to numbers
     if not isinstance(level, int):
         level = logging.getLevelName(level)
     return (
-        functools.partial(_skipRun, logger, level) if dryRun
+        functools.partial(_logDryRun, logger, level) if dryRun
         else functools.partial(logger.log, level)
     )
 
 
-def _skipRun(logger, level, format, *args):
-    logger.log(logging.DEBUG, "WOULD: " + format % args)
+def _logDryRun(logger, level, format, *args):
+    logger.log(level, "WOULD: " + format % args)
     return True
