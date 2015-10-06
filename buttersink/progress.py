@@ -65,14 +65,14 @@ class DisplayProgress(object):
             eta = None
 
         self.output.write(
-            "\r %s: Sent %s%s%s (%s%s) ETA: %s %20s\r" % (
+            "\r %s: Sent %s%s%s ETA: %s (%s) %s%20s\r" % (
                 elapsed,
                 util.humanize(sent),
                 "" if self.total is None else " of %s" % (util.humanize(self.total),),
                 "" if self.total is None else " (%d%%)" % (int(100 * sent / self.total),),
-                chunk or "",
-                "" if mbps is None else " %.3g Mbps" % (mbps,),
                 eta,
+                "" if not mbps else "%.3g Mbps " % (mbps,),
+                chunk or "",
                 " ",
             )
         )
