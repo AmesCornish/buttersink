@@ -274,7 +274,7 @@ class S3Store(Store.Store):
                 logger.error("%s: %s", error.code, error.message)
 
             try:
-                keyName = keyName + Store.theInfoExtension
+                keyName = os.path.dirname(keyName) + Store.theInfoExtension
                 self.bucket.copy_key(theTrashPrefix + keyName, self.bucket.name, keyName)
                 self.bucket.delete_key(keyName)
             except boto.exception.S3ResponseError as error:
