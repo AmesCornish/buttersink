@@ -47,7 +47,7 @@ command = argparse.ArgumentParser(
 If only <dst> is supplied, just list available snapshots.  NOTE: The trailing
 "/" *is* significant.
 
-Copyright (c) 2014-2015 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
+Copyright (c) 2014-2016 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 See README.md and LICENSE.txt for more info.
     """,
     formatter_class=argparse.RawDescriptionHelpFormatter,

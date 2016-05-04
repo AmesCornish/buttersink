@@ -510,6 +510,8 @@ class FileSystem(ioctl.Device):
         logger.debug("RESCAN Status: %s", status)
 
         if not status.flags:
+            if not force:
+                return
             self.QUOTA_RESCAN()
 
         logger.warn("Waiting for btrfs quota usage scan...")
@@ -669,6 +671,7 @@ class FileSystem(ioctl.Device):
 
     def _getUsage(self):
         try:
+            self._rescanSizes(False)
             self._unsafeGetUsage()
         except (IOError, _BtrfsError) as error:
             logger.warn("%s", error)
