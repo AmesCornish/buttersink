@@ -1,3 +1,4 @@
+boto
 crcmod
 flake8
 psutil

@@ -11,7 +11,7 @@ makestamps/apt : apt.txt | makestamps
 	touch $@
 
 makestamps/pip : pip.txt | makestamps
-	sudo pip install $$(cat $<)
+	umask 22 && sudo pip install $$(cat $<)
 	touch $@
 
 makestamps :
