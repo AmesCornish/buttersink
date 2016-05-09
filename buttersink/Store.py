@@ -92,6 +92,8 @@ class Store(object):
             for path in paths:
                 if path.startswith('/'):
                     continue
+                if path == '.':
+                    continue
                 if self.userVolume is not None and os.path.basename(path) != self.userVolume:
                     continue
                 yield vol

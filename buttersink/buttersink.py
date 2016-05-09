@@ -141,7 +141,7 @@ def parseSink(uri, isDest, willDelete, dryrun):
         return None
 
     # logger.debug(uri)
-    pattern = re.compile('^((?P<method>[^:/]*)://)?(?P<host>[^/]*)(/(?P<path>.*))?$')
+    pattern = re.compile('^((?P<method>[^:/]*)://)?(?P<fullpath>(?P<host>[^/]*)(/(?P<path>.*))?)$')
     match = pattern.match(uri)
     if match is None:
         # logger.error("Can't parse snapshot store '%s'", uri)
@@ -151,27 +151,21 @@ def parseSink(uri, isDest, willDelete, dryrun):
     if parts['method'] is None:
         parts['method'] = 'btrfs'
 
-    if parts['method'] in ('btrfs', 'file'):
-        parts['path'] = parts['host'] + '/' + parts['path']
-
     logger.debug(parts)
 
-    Sinks = {
-        'btrfs': ButterStore.ButterStore,
-        # 'file': FileStore,
-        's3': S3Store.S3Store,
-        'ssh': SSHStore.SSHStore,
-    }
+    if parts['method'] in ('btrfs', 'file'):
+        path = parts['fullpath']
+        host = None
+    else:
+        path = parts['path']
+        host = parts['host']
 
     # Paths specify a directory containing subvolumes,
     # unless it's a source path not ending in "/",
     # then it's a single source subvolume.
 
-    path = parts['path']
     if isDest and not path.endswith("/"):
         path += "/"
-
-    host = parts['host']
 
     if not isDest:
         mode = 'r'
@@ -179,6 +173,13 @@ def parseSink(uri, isDest, willDelete, dryrun):
         mode = 'w'
     else:
         mode = 'a'
+
+    Sinks = {
+        'btrfs': ButterStore.ButterStore,
+        # 'file': FileStore,
+        's3': S3Store.S3Store,
+        'ssh': SSHStore.SSHStore,
+    }
 
     return Sinks[parts['method']](host, path, mode, dryrun)
 
@@ -217,12 +218,17 @@ def main():
             except StopIteration:
                 logger.warn("No snapshots in source.")
                 path = args.source or args.dest
-                if not path.endswith("/"):
+                if path.endswith("/"):
+                    logger.error(
+                        "'%s' does not contain any snapshots.  Did you mean to type '%s'?",
+                        path, path[0:-1]
+                    )
+                else:
                     logger.error(
                         "'%s' is not a snapshot.  Did you mean to type '%s/'?",
                         path, path
-                        )
-                    return 1
+                    )
+                return 1
 
             if dest is None:
                 for item in source.listContents():
