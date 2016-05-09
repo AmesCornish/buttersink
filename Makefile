@@ -29,7 +29,7 @@ install : buttersink/version.py
 
 .PHONY : clean
 clean : clean_setup
-	rm -rf make makestamps
+	rm -rf makestamps
 
 .PHONY : pypi
 pypi : buttersink/version.py
