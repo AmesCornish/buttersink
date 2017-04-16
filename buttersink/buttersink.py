@@ -82,6 +82,9 @@ command.add_argument('--part-size', action="store", type=int, default=theChunkSi
                      help='Size of chunks in a multipart upload',
                      )
 
+command.add_argument('--exclude', action="append", type=str,
+                     help="regular expresion to exclude subvols")
+
 # Internals for SSH communication between two buttersinks
 
 command.add_argument('--server', action="store_true",
@@ -238,7 +241,16 @@ def main():
                 return 0
 
             with dest:
-                best = BestDiffs.BestDiffs(source.listVolumes(), args.delete, not args.estimate)
+                volumes = source.listVolumes()
+                if args.exclude:
+                    def is_excluded(vol):
+                        for path in source.getPaths(vol):
+                            for pattern in args.exclude:
+                                if re.match(pattern, path):
+                                    return True
+                        return False
+                    volumes = (vol for vol in volumes if not is_excluded(vol))
+                best = BestDiffs.BestDiffs(volumes, args.delete, not args.estimate)
                 best.analyze(args.part_size << 20, source, dest)
 
                 summary = best.summary()
