@@ -235,7 +235,7 @@ def main():
 
             if dest is None:
                 for item in source.listContents():
-                    print item
+                    print(item)
                 if args.delete:
                     source.deletePartials()
                 return 0

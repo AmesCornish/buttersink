@@ -57,9 +57,10 @@ def main():
         #     pprint.pprint(dev)
 
         for vol in vols:
-            print vol
+            print(vol)
 
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
