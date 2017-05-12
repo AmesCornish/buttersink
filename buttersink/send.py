@@ -220,7 +220,7 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
 
         # This works, and can be fast, when it used compiled extension
         crc = 0 ^ 0xffffffff
-        crc = crc32c(btrfs_cmd_header.write(header), crc)
+        crc = crc32c(btrfs_cmd_header.write(header).tostring(), crc)
         crc = crc32c(attrDataView.tobytes(), crc)
         crc &= 0xffffffff
         crc = crc ^ 0xffffffff
