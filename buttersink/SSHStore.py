@@ -318,7 +318,7 @@ class _Client(object):
     def __init__(self, host, mode, directory):
         self._host = host
         self._mode = mode
-        self._directory = urllib.quote_plus(directory, '/')
+        self._directory = directory
         self._process = None
         self.error = None
 
