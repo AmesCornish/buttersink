@@ -208,7 +208,7 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
         attrs[attrHeader.tlv_type] = attrData.readBuffer(attrHeader.tlv_len)
 
     def calcCRC():
-        header = vars(cmdHeader)
+        header = cmdHeader._asdict()
         header['crc'] = 0
 
         # This works, but is slow
@@ -256,7 +256,7 @@ def replaceIDs(data, receivedUUID, receivedGen, parentUUID, parentGen):
         crc = calcCRC()
         if cmdHeader.crc != crc:
             logger.debug("Correcting CRC from %d to %d", cmdHeader.crc, crc)
-            header = vars(cmdHeader)
+            header = cmdHeader._asdict()
             header['crc'] = crc
             cmdHeaderView[:] = btrfs_cmd_header.write(header).tostring()
 
