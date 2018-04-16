@@ -397,7 +397,7 @@ class _Volume(object):
                 path = self.fileSystem.volumes[dirTree].fullPath
                 if path is not None:
                     return path + ("/" if path[-1] != "/" else "") + dirPath + name
-            except:
+            except Exception:
                 logging.debug("Haven't imported %d yet", dirTree)
 
         if self.id == BTRFS_FS_TREE_OBJECTID:

@@ -446,7 +446,7 @@ class Volume:
                 (toUUID, fromUUID, size) = line.split()
                 try:
                     size = int(size)
-                except:
+                except Exception:
                     logger.warning("Bad size: %s", size)
                     continue
                 logger.debug("diff info: %s %s %d", toUUID, fromUUID, size)

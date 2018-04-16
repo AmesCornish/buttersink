@@ -52,7 +52,7 @@ buttersink/version.py : .git/index .git/refs/tags makestamps/source
 # To test:
 
 #   make test_full
-  
+
 # OPTS=--dry-run
 # OPTS=--verbose
 LOGFILE=make_test.log
@@ -71,11 +71,11 @@ TEST_DIR=/mnt/butter/bs-test
 TEST_METHODS=s3 ssh
 
 TEST_REMOTE_HOST=proliant
-TEST_REMOTE_ssh=ssh://bak@${TEST_REMOTE_HOST}/mnt/butter/bak/test
+TEST_REMOTE_ssh=ssh://bak@${TEST_REMOTE_HOST}/bak/test
 define CLEAN_REMOTE_ssh
-	ssh root@${TEST_REMOTE_HOST} btrfs sub del -c '/mnt/butter/bak/test/*' || true
-	ssh root@${TEST_REMOTE_HOST} rm '/mnt/butter/bak/test/*' || true
-	ssh root@${TEST_REMOTE_HOST} mkdir -p '/mnt/butter/bak/test' || true
+	ssh root@${TEST_REMOTE_HOST} btrfs sub del -c '/bak/test/*' || true
+	ssh root@${TEST_REMOTE_HOST} rm '/bak/test/*' || true
+	ssh root@${TEST_REMOTE_HOST} mkdir -p '/bak/test' || true
 endef
 
 TEST_REMOTE_s3=s3://butter-test/regress

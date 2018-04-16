@@ -385,7 +385,7 @@ class _Client(object):
         # logger.debug('Result: %s', result)
         try:
             result = json.loads(result)
-        except:
+        except Exception:
             # result += os.read(self._process.stdout.fileno(), 5)
             # result += self._process.stdout.read()
             logger.error(result)
