@@ -7,7 +7,7 @@
 all : makestamps/apt makestamps/pip buttersink/version.py
 
 makestamps/apt : apt.txt | makestamps
-	sudo apt-get install $$(cat $<)
+	sudo apt-get install $$(cat $<) || sudo yum install -y $$(cat $<)
 	touch $@
 
 makestamps/pip : pip.txt | makestamps
