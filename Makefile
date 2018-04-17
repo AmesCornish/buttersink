@@ -7,11 +7,11 @@
 all : makestamps/apt makestamps/yum makestamps/pip buttersink/version.py
 
 makestamps/apt : apt.txt | makestamps
- 	if [ -f "/etc/debian_version" ]; then sudo apt-get install $$(cat $<) && touch $@; fi
+	if [ -f "/etc/debian_version" ]; then sudo apt-get install $$(cat $<) touch $@ ; fi
 
 makestamps/yum : yum.txt | makestamps
-	if [ -f "/etc/redhat-release" ]; then sudo yum install -y $$(cat $<) && touch $@; fi
-	
+	if [ -f "/etc/redhat-release" ]; then sudo yum install -y $$(cat $<); touch $@ ; fi
+
 makestamps/pip : pip.txt | makestamps
 	umask 22 && sudo -H pip install $$(cat $<)
 	touch $@
