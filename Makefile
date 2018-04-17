@@ -4,11 +4,13 @@
 # Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 .PHONY : all
-all : makestamps/apt makestamps/pip buttersink/version.py
+all : makestamps/apt makestamps/yum makestamps/pip buttersink/version.py
 
 makestamps/apt : apt.txt | makestamps
-	sudo apt-get install $$(cat $<)
-	touch $@
+	if [ -f "/etc/debian_version" ]; then sudo apt-get install $$(cat $<) touch $@ ; fi
+
+makestamps/yum : yum.txt | makestamps
+	if [ -f "/etc/redhat-release" ]; then sudo yum install -y $$(cat $<); touch $@ ; fi
 
 makestamps/pip : pip.txt | makestamps
 	umask 22 && sudo -H pip install $$(cat $<)
