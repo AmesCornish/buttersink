@@ -4,7 +4,7 @@
 # Copyright (c) 2014 Ames Cornish.  All rights reserved.  Licensed under GPLv3.
 
 .PHONY : all
-all : makestamps/apt makestamps/pip buttersink/version.py
+all : makestamps/apt makestamps/yum makestamps/pip buttersink/version.py
 
 makestamps/apt : apt.txt | makestamps
  	if [ -f "/etc/debian_version" ]; then sudo apt-get install $$(cat $<) && touch $@; fi
