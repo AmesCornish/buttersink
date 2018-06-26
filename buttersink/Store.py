@@ -127,7 +127,7 @@ class Store(object):
         try:
             path = [p for p in paths if not p.startswith("/")][0]
         except IndexError:
-            path = os.path.basename(list(paths)[0])
+            path = os.path.relpath(list(paths)[0], self.userPath)
 
         return self._fullPath(path)
 
