@@ -1,0 +1,4 @@
+btrfs-progs
+python-boto
+python-devel
+python2-pip
