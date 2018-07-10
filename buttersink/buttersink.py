@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#!/usr/bin/env python2
 
 """ Main program to synchronize btrfs snapshots.  See README.md.
 
