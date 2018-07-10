@@ -13,6 +13,7 @@ if True:  # Headers
         import errno
         import logging
         import logging.handlers
+        import os
         import os.path
         import re
         import sys
@@ -23,7 +24,10 @@ if True:  # Headers
         import S3Store
         import SSHStore
 
-theDebug = False
+theDebug = bool(
+        os.environ.get(
+            "BUTTERSINK_DEBUG",
+            False))
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
