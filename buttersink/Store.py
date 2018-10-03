@@ -62,6 +62,7 @@ class Store(object):
 
         self.ignoreExtraVolumes = False
         self.isRemote = False
+        self.isDiffStore = False
 
         # False - Never show progress
         # True - Always show progress

@@ -42,6 +42,8 @@ class ButterStore(Store.Store):
         if not os.path.isdir(self.userPath):
             raise Exception("'%s' is not an existing directory" % (self.userPath))
 
+        self.isDiffStore = True
+
         self.butter = Butter.Butter(dryrun)  # subprocess command-line interface
         self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
