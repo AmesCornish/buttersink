@@ -78,7 +78,7 @@ TEST_METHODS=s3 ssh
 
 define CLEAN_REMOTE_ssh
 	ssh root@${TEST_REMOTE_ssh_HOST} date
-	@echo "*** About to PURGE '${TEST_REMOTE_ssh}/*'"
+	@echo '*** About to PURGE "${TEST_REMOTE_ssh}/*"'
 	@read -p "Type YES to approve: " approved && [ "$$approved" = "YES" ] || return 1
 	ssh root@${TEST_REMOTE_ssh_HOST} btrfs sub del -c '${TEST_REMOTE_ssh_DIR}/*' || true
 	ssh root@${TEST_REMOTE_ssh_HOST} rm -f '${TEST_REMOTE_ssh_DIR}/*' || true
@@ -86,7 +86,7 @@ define CLEAN_REMOTE_ssh
 endef
 
 define CLEAN_REMOTE_s3
-	@echo "*** About to PURGE '${TEST_REMOTE_s3}/*'"
+	@echo '*** About to PURGE "${TEST_REMOTE_s3}/*"'
 	@read -p "Type YES to approve: " approved && [ "$$approved" = "YES" ] || return 1
 	aws s3 rm ${TEST_REMOTE_s3} --recursive
 endef
@@ -105,15 +105,15 @@ test : test_full ;
 .PHONY : test
 
 test_quick : makestamps/test_code
-	@echo "*** Quick tests passed ***"
+	@echo '*** Quick tests passed ***'
 .PHONY : test_quick
 
 test_full : test_restore test_quick
-	@echo "*** All tests passed ***"
+	@echo '*** All tests passed ***'
 .PHONY : test_full
 
 test_restore : $(addprefix makestamps/test_restore_, ${TEST_METHODS}) makestamps/test_backup
-	@echo "*** Backup and restore tests passed ***"
+	@echo '*** Backup and restore tests passed ***'
 .PHONY : test_restore
 
 makestamps/test_backup : $(addprefix makestamps/test_backup_, ${TEST_METHODS})
@@ -129,7 +129,7 @@ makestamps/test_code : makestamps/source all
 
 makestamps/test_backup_% : $(addprefix ${TEST_DIR}/snaps/,A B C) makestamps/source
 	${CLEAN_REMOTE_$*}
-	@echo *** Testing BACKUP...
+	@echo '*** Testing BACKUP...'
 	${EXEC} ${TEST_DIR}/snaps/ ${TEST_REMOTE_$*}/
 	touch $@
 
@@ -149,7 +149,7 @@ ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 	cd $@; sha256sum --check sha256sum.txt
 
 define CLEAN_TEST
-	@echo *** PURGEing local test files...
+	@echo '*** PURGEing local test files...'
 	sudo sync
 	sudo btrfs sub del -c ${TEST_DIR}/*/* 2>/dev/null || true
 	sudo rm -f ${TEST_DIR}/*/* 2>/dev/null || true
@@ -167,7 +167,7 @@ clean_test :
 makestamps/test_restore_% : makestamps/test_backup | ${TEST_DIR}
 	$(CLEAN_TEST)
 	sudo sync
-	@echo *** Testing RESTORE...
+	@echo '*** Testing RESTORE...'
 	mkdir -p ${TEST_DIR}/$*/
 	${EXEC} ${TEST_REMOTE_$*}/${RESTORE_SNAP} ${TEST_DIR}/$*/
 	sudo sync
