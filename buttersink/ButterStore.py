@@ -298,6 +298,13 @@ class ButterStore(Store.Store):
         self._keepVol(diff.toVol)
         self._keepVol(diff.fromVol)
 
+        for path in diff.sink.getPaths(diff.toVol):
+            if path.startswith(diff.sink.userPath):
+                return
+
+        if not self._skipDryRun(logger)("Copy %s to %s", path, diff.sink.userPath):
+            self.butter.copy(path, diff.sink.userPath)
+
     def _keepVol(self, vol):
         """ Mark this volume to be kept in path. """
         if vol is None:
