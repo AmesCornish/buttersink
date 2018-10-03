@@ -1,0 +1,9 @@
+    # Configuration for ButterSink regression testing.
+    # You need to create test S3 buckets and SSH servers for these.
+    # SSH server can be localhost, but it should use a different btrfs volume
+
+    TEST_DIR=/mnt/butter/bs-test/local
+    TEST_REMOTE_ssh_HOST=localhost
+    TEST_REMOTE_ssh_USER=root
+    TEST_REMOTE_ssh_DIR=/mnt/butter/bs-test/ssh
+    TEST_REMOTE_s3=s3://butter-test/regress

@@ -2,3 +2,4 @@ boto
 crcmod
 flake8
 psutil
+pudb

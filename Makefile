@@ -13,7 +13,7 @@ makestamps/yum : yum.txt | makestamps
 	if [ -f "/etc/redhat-release" ]; then sudo yum install -y $$(cat $<); touch $@ ; fi
 
 makestamps/pip : pip.txt | makestamps
-	umask 22 && sudo -H pip install $$(cat $<)
+	umask 22 && sudo -H python2 -m pip install $$(cat $<)
 	touch $@
 
 makestamps :
@@ -52,8 +52,7 @@ buttersink/version.py : .git/index .git/refs/tags makestamps/source
 # Test cases
 
 # To test:
-
-#   make test_full
+#   make test
 
 # OPTS=--dry-run
 # OPTS=--verbose
@@ -67,26 +66,29 @@ EXEC=sudo -E ./buttersink.py ${OPTS}
 # PYTHON=/home/ames/python/bin/python
 # EXEC=sudo -E PYTHONPATH=${PYTHONPATH} ${PYTHON} ./buttersink.py ${OPTS}
 
-TEST_DIR=/mnt/butter/bs-test
+include Makefile.inc
+
+Makefile.inc : | Makefile.inc.default
+	cp -a Makefile.inc.default $@
+
+TEST_REMOTE_ssh=ssh://${TEST_REMOTE_ssh_USER}@${TEST_REMOTE_ssh_HOST}${TEST_REMOTE_ssh_DIR}
 
 # TEST_METHODS=ssh
 TEST_METHODS=s3 ssh
 
-TEST_REMOTE_HOST=proliant
-TEST_REMOTE_ssh=ssh://bak@${TEST_REMOTE_HOST}/bak/test
 define CLEAN_REMOTE_ssh
-	ssh root@${TEST_REMOTE_HOST} btrfs sub del -c '/bak/test/*' || true
-	ssh root@${TEST_REMOTE_HOST} rm '/bak/test/*' || true
-	ssh root@${TEST_REMOTE_HOST} mkdir -p '/bak/test' || true
+	ssh root@${TEST_REMOTE_ssh_HOST} date
+	@echo "*** About to PURGE '${TEST_REMOTE_ssh}/*'"
+	@read -p "Type YES to approve: " approved && [ "$$approved" = "YES" ] || return 1
+	ssh root@${TEST_REMOTE_ssh_HOST} btrfs sub del -c '${TEST_REMOTE_ssh_DIR}/*' || true
+	ssh root@${TEST_REMOTE_ssh_HOST} rm -f '${TEST_REMOTE_ssh_DIR}/*' || true
+	ssh root@${TEST_REMOTE_ssh_HOST} mkdir -p '${TEST_REMOTE_ssh_DIR}'
 endef
 
-TEST_REMOTE_s3=s3://butter-test/regress
 define CLEAN_REMOTE_s3
-	if which s3cmd; then \
-		s3cmd rm ${TEST_REMOTE_s3} --recursive ; \
-	else \
-		read -p "Please delete S3 test buckets, and press <enter> " FOO ; \
-	fi
+	@echo "*** About to PURGE '${TEST_REMOTE_s3}/*'"
+	@read -p "Type YES to approve: " approved && [ "$$approved" = "YES" ] || return 1
+	aws s3 rm ${TEST_REMOTE_s3} --recursive
 endef
 
 # Count of 100K chunks:
@@ -120,13 +122,14 @@ makestamps/test_backup : $(addprefix makestamps/test_backup_, ${TEST_METHODS})
 makestamps/test_code : makestamps/source all
 	flake8 buttersink
 	python -m doctest buttersink/ioctl.py
-	! grep -IE "${DEBUG_CODE}" $$(find -name '*.py')
+	! grep -IE "${DEBUG_CODE}" $$(find buttersink -name '*.py')
 	touch $@
 
 .SECONDARY : $(addprefix ${TEST_DIR}/snaps/,A B C)
 
-makestamps/test_backup_% : $(addprefix ${TEST_DIR}/snaps/,A B C)
+makestamps/test_backup_% : $(addprefix ${TEST_DIR}/snaps/,A B C) makestamps/source
 	${CLEAN_REMOTE_$*}
+	@echo *** Testing BACKUP...
 	${EXEC} ${TEST_DIR}/snaps/ ${TEST_REMOTE_$*}/
 	touch $@
 
@@ -146,33 +149,36 @@ ${TEST_DIR}/snaps/% : | ${TEST_DIR}/snaps
 	cd $@; sha256sum --check sha256sum.txt
 
 define CLEAN_TEST
+	@echo *** PURGEing local test files...
 	sudo sync
 	sudo btrfs sub del -c ${TEST_DIR}/*/* 2>/dev/null || true
-	sudo rm ${TEST_DIR}/*/* 2>/dev/null || true
-	sudo rm ${TEST_DIR}/*.dat ${TEST_DIR}/sha256sum.txt 2>/dev/null || true
+	sudo rm -f ${TEST_DIR}/*/* 2>/dev/null || true
+	sudo rm -f ${TEST_DIR}/*.dat ${TEST_DIR}/sha256sum.txt 2>/dev/null || true
 endef
 
 clean_test :
 	${CLEAN_TEST}
-	sudo rm ${LOGFILE} 2>/dev/null || true
-	rm makestamps/test_* 2>/dev/null || true
+	sudo rm -f ${LOGFILE} 2>/dev/null || true
+	rm -f makestamps/test_* 2>/dev/null || true
 	${CLEAN_REMOTE_ssh}
 	${CLEAN_REMOTE_s3}
 .PHONY : clean_test
 
-makestamps/test_restore_% : makestamps/test_backup | ${TEST_DIR}/restore
+makestamps/test_restore_% : makestamps/test_backup | ${TEST_DIR}
 	$(CLEAN_TEST)
 	sudo sync
-	${EXEC} ${TEST_REMOTE_$*}/${RESTORE_SNAP} ${TEST_DIR}/restore/
+	@echo *** Testing RESTORE...
+	mkdir -p ${TEST_DIR}/$*/
+	${EXEC} ${TEST_REMOTE_$*}/${RESTORE_SNAP} ${TEST_DIR}/$*/
 	sudo sync
 	# Check that not *all* snapshots were restored
-	! ls -d $(addprefix ${TEST_DIR}/restore/,A B C)
-	cd ${TEST_DIR}/restore/${RESTORE_SNAP}; sha256sum --check sha256sum.txt
+	! ls -d $(addprefix ${TEST_DIR}/$*/,A B C)
+	cd ${TEST_DIR}/$*/${RESTORE_SNAP}; sha256sum --check sha256sum.txt
 	$(CLEAN_TEST)
 	touch $@
 
 test_list :
-	${EXEC} ${TEST_REMOTE_SSH}/
-	${EXEC} ${TEST_REMOTE_S3}/
+	${EXEC} ${TEST_REMOTE_ssh}/
+	${EXEC} ${TEST_REMOTE_s3}/
 	${EXEC} ${TEST_DIR}/snaps/
 .PHONY : test_list

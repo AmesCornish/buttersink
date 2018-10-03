@@ -25,9 +25,9 @@ if True:  # Headers
         import SSHStore
 
 theDebug = bool(
-        os.environ.get(
-            "BUTTERSINK_DEBUG",
-            False))
+    os.environ.get(
+        "BUTTERSINK_DEBUG",
+        False))
 
 logger = logging.getLogger(__name__)
 # logger.setLevel('DEBUG')
