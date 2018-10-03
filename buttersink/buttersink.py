@@ -39,7 +39,7 @@ except IOError:
     print("Can't import version.py")
     theVersion = "<unknown>"
 
-theChunkSize = 20
+theChunkSize = 100
 
 command = argparse.ArgumentParser(
     description="Synchronize two sets of btrfs snapshots.",
@@ -83,7 +83,7 @@ command.add_argument('-V', '--version', action="version", version='%(prog)s ' + 
                      )
 
 command.add_argument('--part-size', action="store", type=int, default=theChunkSize,
-                     help='Size of chunks in a multipart upload',
+                     help='MB size of chunks in a multipart upload (default ' + str(theChunkSize) + ')',
                      )
 
 command.add_argument('--exclude', action="append", type=str,
