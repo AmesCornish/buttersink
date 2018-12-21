@@ -131,6 +131,8 @@ makestamps/test_backup_% : $(addprefix ${TEST_DIR}/snaps/,A B C) makestamps/sour
 	${CLEAN_REMOTE_$*}
 	@echo '*** Testing BACKUP...'
 	${EXEC} ${TEST_DIR}/snaps/ ${TEST_REMOTE_$*}/
+	# Re-transfer should do nothing and succeed
+	${EXEC} ${TEST_DIR}/snaps/ ${TEST_REMOTE_$*}/
 	touch $@
 
 ${TEST_DIR} :
