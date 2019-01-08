@@ -1,11 +1,13 @@
 """ Pythonic wrapper around kernel ioctl-level access to btrfs. """
 
 # See <linux/btrfs.h> for C source.
+# Docs: https://github.com/torvalds/linux/
 # See btrfs-progs/ctree.h for some constants.
 # Headers taken from 3.13.0-32
 
-# This is NOT a complete implementation,
-# just a few useful routines for my current project.
+# This is NOT a complete implementation.
+# It includes about half the btrfs calls,
+# and a framework to make it easy to add more.
 
 from ioctl import Structure, t
 from util import pretty, humanize
@@ -210,6 +212,11 @@ btrfs_qgroup_status_item = Structure(
     packed=True
 )
 
+btrfs_flags = Structure(
+    (t.le64, 'flags'),
+    packed=True
+)
+
 btrfs_block_group_item = Structure(
     (t.le64, 'used'),
     (t.le64, 'chunk_objectid'),
@@ -276,20 +283,14 @@ btrfs_ioctl_vol_args_v2 = Structure(
     packed=True
 )
 
-btrfs_ioctl_timespec = Structure(
-    (t.u64, 'sec'),
-    (t.u32, 'nsec'),
-    packed=True
-)
-
 btrfs_ioctl_received_subvol_args = Structure(
-    (t.char, 'uuid', BTRFS_UUID_SIZE),   # /* in */
+    (t.u8, 'uuid', BTRFS_UUID_SIZE, bytes2uuid, uuid2bytes),   # /* in */
     (t.u64, 'stransid'),                # /* in */
     (t.u64, 'rtransid'),                # /* out */
-    (btrfs_ioctl_timespec, 'stime'),        # /* in */
-    (btrfs_ioctl_timespec, 'rtime'),        # /* out */
+    (btrfs_timespec, 'stime'),        # /* in */
+    (btrfs_timespec, 'rtime'),        # /* out */
     (t.u64, 'flags'),                   # /* in */
-    (t.u64, 'reserved', 16),             # /* in */
+    (t.u64, 'reserved', 16, t.readBuffer),             # /* in */
     packed=True
 )
 
@@ -451,17 +452,39 @@ class _Volume(object):
 
     def copy(self, path):
         """ Make another snapshot of this into dirName. """
-        destDir = _Directory(os.path.dirname(path))
-        with self._snapshot() as source, destDir as dest:
+        directoryPath = os.path.dirname(path)
+        if not os.path.exists(directoryPath):
+            os.makedirs(directoryPath)
+
+        logger.debug('Create copy of %s in %s', os.path.basename(path), directoryPath)
+
+        with self._snapshot() as source, _Directory(directoryPath) as dest:
             dest.SNAP_CREATE_V2(
                 flags=BTRFS_SUBVOL_RDONLY,
                 name=str(os.path.basename(path)),
                 fd=source.fd,
             )
 
+        with SnapShot(path) as destShot:
+            flags = destShot.SUBVOL_GETFLAGS()
+            destShot.SUBVOL_SETFLAGS(flags=flags.flags & ~BTRFS_SUBVOL_RDONLY)
+
+            destShot.SET_RECEIVED_SUBVOL(
+                uuid=self.received_uuid or self.uuid,
+                stransid=self.sent_gen or self.current_gen,
+                stime=timeOrNone(self.info.stime) or timeOrNone(self.info.ctime) or 0,
+                flags=0,
+            )
+
+            destShot.SUBVOL_SETFLAGS(flags=flags.flags)
+
     def _snapshot(self):
         path = next(iter(self.linuxPaths))
         return SnapShot(path)
+
+
+def timeOrNone(btrfsTime):
+    return btrfsTime if btrfsTime.sec or btrfsTime.nsec else None
 
 
 class Control(ioctl.Control):
@@ -756,6 +779,8 @@ class SnapShot(ioctl.Device):
     """ SnapShot (read-only subvolume) identified by path. """
 
     SET_RECEIVED_SUBVOL = Control.IOWR(37, btrfs_ioctl_received_subvol_args)
+    SUBVOL_GETFLAGS = Control.IOR(25, btrfs_flags)
+    SUBVOL_SETFLAGS = Control.IOW(26, btrfs_flags)
 
 
 # define BTRFS_IOC_START_SYNC _IOR(BTRFS_IOCTL_MAGIC, 24, __u64)

@@ -47,8 +47,13 @@ class ButterStore(Store.Store):
         self.butter = Butter.Butter(dryrun)  # subprocess command-line interface
         self.btrfs = btrfs.FileSystem(self.userPath)     # ioctl interface
 
-        self.butterVolumes = {}   # Dict of {uuid: <btrfs.Volume>}
-        self.extraVolumes = {}  # Will hold volumes inside store directory, but no longer in source
+        # Dict of {uuid: <btrfs.Volume>}
+        self.butterVolumes = {}
+
+        # Volumes to be deleted using the '--delete' option.
+        # Initialized to hold all volumes inside destination directory,
+        # Then volumes in source are "kept", and removed from extraVolumes.
+        self.extraVolumes = {}
 
     def _btrfsVol2StoreVol(self, bvol):
         if bvol.received_uuid is not None:
@@ -300,13 +305,6 @@ class ButterStore(Store.Store):
         self._keepVol(diff.toVol)
         self._keepVol(diff.fromVol)
 
-        for path in diff.sink.getPaths(diff.toVol):
-            if path.startswith(diff.sink.userPath):
-                return
-
-        if not self._skipDryRun(logger)("Copy %s to %s", path, diff.sink.userPath):
-            self.butter.copy(path, diff.sink.userPath)
-
     def _keepVol(self, vol):
         """ Mark this volume to be kept in path. """
         if vol is None:
@@ -319,10 +317,8 @@ class ButterStore(Store.Store):
         if vol not in self.paths:
             raise Exception("%s not in %s" % (vol, self))
 
-        paths = self.paths[vol]
+        paths = [os.path.basename(path) for path in self.paths[vol]]
         newPath = self.selectReceivePath(paths)
-        if self._relativePath(newPath) in paths:
-            return
 
         if self._skipDryRun(logger, 'INFO')("Copy %s to %s", vol, newPath):
             return

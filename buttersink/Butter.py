@@ -116,27 +116,6 @@ class Butter:
 
         return _Reader(process, process.stdout, targetPath, diff, showProgress)
 
-    def copy(self, volPath, directory):
-        """ Create a read-only snapshot copy of volume in directory. """
-        cmd = ["btrfs", "subvolume", "snapshot", "-r", volPath, directory]
-
-        if Store.skipDryRun(logger, self.dryrun)("Command: %s", cmd):
-            return None
-
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        logger.debug(cmd)
-
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=DEVNULL)
-        _makeNice(process)
-
-        (out, err) = process.communicate()
-
-        if err:
-            raise Exception(err)
-
 
 class _Writer(io.RawIOBase):
 

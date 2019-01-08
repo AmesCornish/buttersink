@@ -208,8 +208,14 @@ class Structure:
         return (name, typeDef, typeObj)
 
     def yieldArgs(self, keyArgs):
+        try:
+            keyArgs = keyArgs._asdict() if keyArgs else {}
+        except AttributeError:
+            pass
+        logger.debug('Args: %s', keyArgs)
         """ Take (nested) dict(s) of args to set, and return flat list of args. """
         for (name, typeObj) in self._types.items():
+            logger.debug('Yielding %s: %s', name, typeObj)
             for arg in typeObj.yieldArgs(keyArgs.get(name, None)):
                 yield arg
 

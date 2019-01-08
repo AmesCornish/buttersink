@@ -509,7 +509,10 @@ class StoreProxyServer(object):
 
     def _errorInfo(self, command, error):
         trace = traceback.format_exc()
-        trace = trace.splitlines()[-3]
+        trace = trace.splitlines()[-3].strip()
+
+        # Emit into local syslog, but let remote display to user
+        logger.debug('%s in %s', str(error), trace)
 
         return dict(
             error=str(error),

@@ -83,7 +83,10 @@ command.add_argument('-V', '--version', action="version", version='%(prog)s ' + 
                      )
 
 command.add_argument('--part-size', action="store", type=int, default=theChunkSize,
-                     help='MB size of chunks in a multipart upload (default ' + str(theChunkSize) + ')',
+                     help=('MB size of chunks in a multipart upload (default ' +
+                           str(theChunkSize) +
+                           ')'
+                           ),
                      )
 
 command.add_argument('--exclude', action="append", type=str,
@@ -135,7 +138,7 @@ def _setupLogging(quiet, logFile, isServer):
 
     if isServer:
         handler = logging.handlers.SysLogHandler(address='/dev/log')
-        handler.setLevel(level)
+        handler.setLevel(level if quiet else "DEBUG")
         handler.setFormatter(logging.Formatter(theSysLogFormat))
         root.addHandler(handler)
 

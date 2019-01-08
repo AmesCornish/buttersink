@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class Store(object):
 
-    """ Abstract class for storage back-end.
+    """ Abstract class for storage back-end.  AKA Sink.
 
     Diffs should be indexed by "from" volume.
     Paths should be indexed by volume.
@@ -116,18 +116,22 @@ class Store(object):
             return None
 
     def selectReceivePath(self, paths):
-        """ From a set of destination paths, select the best one to receive to.
+        """ From a set of source paths, recommend a destination path.
 
         The paths are relative or absolute, in a source Store.
         The result will be absolute, suitable for this destination Store.
 
         """
         logger.debug("%s", paths)
+
         if not paths:
             path = os.path.basename(self.userPath) + '/Anon'
+
         try:
+            # Relative paths are preferred
             path = [p for p in paths if not p.startswith("/")][0]
         except IndexError:
+            # If no relative path, just use the first path
             path = os.path.relpath(list(paths)[0], self.userPath)
 
         return self._fullPath(path)
@@ -226,7 +230,10 @@ class Store(object):
 
     @abc.abstractmethod
     def keep(self, diff):
-        """ Mark this diff (or volume) to be kept in path. """
+        """ Mark this diff (or volume) to be kept in path.
+
+        diff.sink should be self.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -283,7 +290,7 @@ class Diff:
 
     def __init__(self, sink, toVol, fromVol, size=None, sizeIsEstimated=False):
         """ Initialize. """
-        self.sink = sink
+        self.sink = sink  # AKA store
         self.toVol = Volume.make(toVol)
         self.fromVol = Volume.make(fromVol)
         self.setSize(size, sizeIsEstimated)
@@ -389,7 +396,10 @@ class Diff:
 
 class Volume:
 
-    """ Represents a snapshot. """
+    """ Represents a snapshot.
+
+    Unique for a UUID (independent of Store and paths).
+    """
 
     def __init__(self, uuid, gen, size=None, exclusiveSize=None):
         """ Initialize. """
